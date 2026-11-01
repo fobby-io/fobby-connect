@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fobby Rosetta</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dcdad4;
+    --accent: #1f5f8b; --warn: #b4531a; --warn-bg: #fdf0e6; --ok: #2f7a3f; --ok-bg: #e9f5ec; --edit-bg: #fff6cc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --panel: #1f1f1d; --ink: #ecebe7; --muted: #a09f9a; --line: #3a3936;
+      --accent: #6fb0dd; --warn: #f0995c; --warn-bg: #3a2516; --ok: #7cc98b; --ok-bg: #1b3221; --edit-bg: #4a4013; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { display: flex; gap: 16px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  header .spent { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=text] { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; padding: 16px 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tabs button.on { border-color: var(--accent); color: var(--accent); }
+  .page { position: relative; }
+  .page img { width: 100%; display: block; border: 1px solid var(--line); }
+  .box { position: absolute; border: 2px solid transparent; border-radius: 2px; pointer-events: none; }
+  .box.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 12px; }
+  .meta dt { color: var(--muted); }
+  .meta dd { margin: 0; }
+  .findings { margin: 0 0 12px; padding: 10px 12px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); }
+  .findings.none { background: var(--ok-bg); color: var(--ok); }
+  .findings ul { margin: 4px 0 0; padding-left: 18px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 0; vertical-align: top; }
+  th { text-align: left; padding: 6px; background: var(--bg); font-weight: 600; }
+  th select { display: block; margin-top: 4px; font: inherit; font-size: 12px; font-weight: 400; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; }
+  th select.edited { background: var(--edit-bg); color: var(--ink); }
+  td.t { padding: 6px; color: var(--muted); white-space: nowrap; }
+  textarea { width: 100%; min-width: 80px; border: 0; padding: 6px; font: inherit; background: transparent; color: var(--ink); resize: vertical; field-sizing: content; }
+  textarea.edited { background: var(--edit-bg); }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  tr.on td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  h2 { font-size: 14px; margin: 16px 0 8px; }
+  .approve { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  .result { margin-top: 12px; padding: 12px; border-radius: 6px; border: 1px solid var(--line); }
+  .result ul { margin: 6px 0 0; padding-left: 18px; }
+  .muted { color: var(--muted); }
+  .empty { padding: 60px 20px; text-align: center; color: var(--muted); }
+  .history li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fobby Rosetta</h1>
+  <label>PDF <input type="file" id="file" accept="application/pdf"></label>
+  <label>Sender (optional) <input type="text" id="senderHint" placeholder="detected from page 1"></label>
+  <button class="primary" id="read" disabled>Read</button>
+  <span class="spent" id="spent"></span>
+</header>
+<main id="main">
+  <div class="panel empty" style="grid-column: 1 / -1">Choose a packing list or shipping order PDF and press Read.</div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids.filter((k) => k != null)); return e; };
+let doc = null, answer = null, current = 0;
+const FIELDS = ["pkg_range", "marks", "description", "part_no", "lot_no", "hs_code", "po_no", "pkg_qty", "pkg_unit", "qty", "qty_unit", "qty_per_pkg", "nw_kg", "gw_kg", "nw_per_pkg_kg", "gw_per_pkg_kg", "cbm"];
+
+$("#file").onchange = () => { $("#read").disabled = !$("#file").files.length; };
+$("#read").onclick = async () => {
+  const f = $("#file").files[0];
+  $("#read").disabled = true;
+  $("#main").replaceChildren(el("div", { className: "panel empty", style: "grid-column: 1 / -1", textContent: `Reading ${f.name}…` }));
+  const q = new URLSearchParams({ name: f.name, sender: $("#senderHint").value });
+  const r = await fetch(`/api/documents?${q}`, { method: "POST", body: f });
+  const j = await r.json();
+  $("#read").disabled = false;
+  if (!r.ok) return $("#main").replaceChildren(el("div", { className: "panel empty", style: "grid-column: 1 / -1", textContent: j.error.message }));
+  doc = j; answer = structuredClone(j.run.pages.map((p) => p.output)); current = 0;
+  history.replaceState(null, "", `#${j.id}`);
+  render();
+};
+
+// #<id> reopens a document already read, so a review survives a reload.
+async function open(id) {
+  const r = await fetch(`/api/documents/${id}`);
+  if (!r.ok) return;
+  doc = await r.json(); answer = structuredClone(doc.run.pages.map((p) => p.output)); current = 0;
+  render();
+}
+if (location.hash.length > 1) open(location.hash.slice(1));
+
+const cellAt = (p, r, c) => doc.run.pages[p].output.rows[r]?.cells[c] ?? null;
+
+function render() {
+  $("#spent").textContent = `model spend this session: US$${doc.spent.toFixed(3)}`;
+  const run = doc.run;
+  const pg = run.pages[current];
+  const out = answer[current];
+
+  const img = el("img", { src: `/api/documents/${doc.id}/pages/${pg.page_no}.png`, alt: `Page ${pg.page_no}` });
+  const page = el("div", { className: "page" }, img);
+  const boxes = out.rows.map((r) => {
+    const [x0, y0, x1, y1] = r.box;
+    const b = el("div", { className: "box" });
+    Object.assign(b.style, { left: `${x0 / 10}%`, top: `${y0 / 10}%`, width: `${(x1 - x0) / 10}%`, height: `${(y1 - y0) / 10}%` });
+    page.append(b);
+    return b;
+  });
+  const tabs = el("div", { className: "tabs" }, ...run.pages.map((p, i) => {
+    const n = run.findings.filter((f) => f.page === p.page_no).length;
+    return el("button", { className: i === current ? "on" : "", textContent: `Page ${p.page_no}${n ? ` · ${n} to check` : ""}`, onclick: () => { current = i; render(); } });
+  }));
+  const left = el("section", { className: "panel" }, tabs, page);
+
+  const meta = el("dl", { className: "meta" },
+    el("dt", { textContent: "Document type" }), el("dd", { textContent: run.cls ?? "unknown" }),
+    el("dt", { textContent: "Issuer on page 1" }), el("dd", { textContent: (run.issuer ?? "—").split("\n")[0] }),
+    el("dt", { textContent: "Prompt used" }), el("dd", { textContent: promptLabel(run.prompt) }),
+    el("dt", { textContent: "Route" }), el("dd", { textContent: `${pg.route}${pg.reread ? ", re-read after a failed check" : ""}` }));
+
+  // One finding per failed check; the server lists it once per page involved so only those pages are re-read.
+  const byMsg = Map.groupBy(run.findings, (f) => f.message);
+  const fs = [...byMsg].map(([m, list]) => `${m} (page ${list.map((f) => f.page).sort().join(", ")})`);
+  const findings = el("div", { className: `findings${fs.length ? "" : " none"}` },
+    fs.length ? `${fs.length} check${fs.length > 1 ? "s" : ""} failed — compare these with the page:` : "All checks passed: row sums match the totals line.",
+    fs.length ? el("ul", {}, ...fs.map((t) => el("li", { textContent: t }))) : null);
+
+  const head = el("tr", {}, el("th", { textContent: "Type" }), ...out.columns.map((c, ci) => {
+    const orig = doc.run.pages[current].output.columns[ci]?.field;
+    const sel = el("select", { title: "The field this column holds" }, ...FIELDS.map((f) => el("option", { value: f, textContent: f, selected: f === c.field })));
+    const mark = () => sel.classList.toggle("edited", sel.value !== orig);
+    sel.onchange = () => { c.field = sel.value; mark(); };
+    mark();
+    return el("th", {}, c.label, sel);
+  }));
+  const body = out.rows.map((r, ri) => {
+    const tr = el("tr", {}, el("td", { className: "t", textContent: r.t }), ...r.cells.map((v, ci) => {
+      const ta = el("textarea", { value: v ?? "", rows: 1 });
+      const mark = () => ta.classList.toggle("edited", (ta.value || null) !== cellAt(current, ri, ci));
+      mark();
+      ta.oninput = () => { r.cells[ci] = ta.value === "" ? null : ta.value; mark(); };
+      ta.onfocus = () => { boxes.forEach((b, i) => b.classList.toggle("on", i === ri)); tr.parentElement.querySelectorAll("tr").forEach((x) => x.classList.remove("on")); tr.classList.add("on"); };
+      return el("td", {}, ta);
+    }));
+    return tr;
+  });
+  const table = el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+
+  const totals = Object.entries(out.totals).filter(([, v]) => v);
+  const totalsTable = totals.length ? el("div", {}, el("h2", { textContent: "Totals line" }), el("table", {}, el("tbody", {}, ...totals.map(([k, v]) => {
+    const orig = doc.run.pages[current].output.totals[k]?.v ?? null;
+    const ta = el("textarea", { value: v.v, rows: 1 });
+    ta.oninput = () => { v.v = ta.value; ta.classList.toggle("edited", ta.value !== orig); };
+    ta.classList.toggle("edited", v.v !== orig);
+    return el("tr", {}, el("th", { textContent: k }), el("td", {}, ta));
+  })))) : null;
+
+  const senderIn = el("input", { type: "text", value: doc.approved?.sender ?? run.sender ?? (run.issuer ?? "").split("\n")[0].replace(/[.,]/g, "").split(/\s+/)[0] ?? "" });
+  const btn = el("button", { className: "primary", textContent: doc.approved ? "Approved" : "Approve and learn", disabled: !!doc.approved });
+  const resultBox = el("div");
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = "Checking the new prompt against this sender's approved documents…";
+    const r = await fetch(`/api/documents/${doc.id}/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sender: senderIn.value, answer }) });
+    const j = await r.json();
+    if (!r.ok) { btn.disabled = false; btn.textContent = "Approve and learn"; return resultBox.replaceChildren(el("p", { className: "findings", textContent: j.error.message })); }
+    doc.approved = { sender: senderIn.value, learn: j.learn, corrected: j.corrected }; doc.spent = j.spent;
+    btn.textContent = "Approved";
+    resultBox.replaceChildren(learnView(doc.approved));
+    $("#spent").textContent = `model spend this session: US$${doc.spent.toFixed(3)}`;
+    loadHistory();
+  };
+  if (doc.approved) resultBox.append(learnView(doc.approved));
+  const approve = el("div", { className: "approve" }, el("label", {}, "Sender ", senderIn), btn);
+
+  const right = el("section", { className: "panel" }, meta, findings, el("h2", { textContent: `Rows on page ${pg.page_no}` }), table, totalsTable, approve, resultBox,
+    el("h2", { textContent: "What the system has learned" }), el("ul", { className: "history", id: "history" }));
+  $("#main").replaceChildren(left, right);
+  loadHistory();
+}
+
+function promptLabel(p) {
+  if (!p) return "none";
+  if (p.level === "sender") return `${p.key.split("/")[0]}'s profile, version ${p.version}`;
+  if (p.level === "class") return `${p.key} base prompt (no profile for this sender yet)`;
+  return "fallback prompt";
+}
+
+function learnView(a) {
+  const l = a.learn;
+  if (l.outcome === "no_change") return el("div", { className: "result" }, "No values were changed, so the prompt stays as it is.");
+  if (l.outcome === "activated") {
+    const v = l.version;
+    return el("div", { className: "result" },
+      el("strong", { textContent: `${a.corrected} field${a.corrected === 1 ? "" : "s"} corrected → ${a.sender}'s profile version ${v.version} is now active.` }),
+      el("p", { className: "muted", textContent: `Checked against ${l.scores.candidate.length} approved document(s): errors with the new version ${l.scores.candidate.join(", ")}, with the previous one ${l.scores.current.join(", ")}.` }),
+      v.notes.length ? el("ul", {}, ...v.notes.map((n) => el("li", { textContent: n }))) : el("p", { className: "muted", textContent: "Learned the column layout and this document as an example." }));
+  }
+  return el("div", { className: "result" },
+    el("strong", { textContent: `${a.corrected} field${a.corrected === 1 ? "" : "s"} corrected, but no new prompt read this sender's documents better.` }),
+    el("p", { className: "muted", textContent: `The current prompt stays. These fields will always be shown to a person: ${l.always_review.join(", ")}.` }));
+}
+
+async function loadHistory() {
+  const h = await (await fetch("/api/profiles")).json();
+  const ul = $("#history");
+  if (!ul) return;
+  if (!h.length) return ul.replaceChildren(el("li", { className: "muted", textContent: "Nothing yet: approve a corrected document to create the first sender profile." }));
+  ul.replaceChildren(...h.flatMap((s) => s.versions.map((v) => el("li", {},
+    el("strong", { textContent: `${s.sender} ${v.key.split("/")[1]} v${v.version}` }), ` — ${v.status}; ${v.change}`,
+    v.notes.length ? el("div", { className: "muted", textContent: v.notes.join(" · ") }) : null))));
+}
+</script>
+</body>
+</html>
