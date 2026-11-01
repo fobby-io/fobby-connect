@@ -20,7 +20,7 @@
   button { font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
   button:disabled { opacity: .55; cursor: default; }
-  button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; }
+  button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-size: 13px; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   header { display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -31,7 +31,7 @@
   .steps li.done { color: var(--ok); }
   header .new { margin-left: auto; }
 
-  .wrap { max-width: 1500px; margin: 0 auto; padding: 20px 24px 120px; }
+  .wrap { max-width: 1600px; margin: 0 auto; padding: 20px 24px 120px; }
   .drop { max-width: 640px; margin: 60px auto; text-align: center; background: var(--panel); border: 2px dashed var(--line); border-radius: 12px; padding: 48px 32px; }
   .drop.over { border-color: var(--accent); }
   .drop h2 { margin: 0 0 8px; font-size: 20px; }
@@ -50,42 +50,51 @@
   .todo li { margin: 4px 0; }
   .todo li button.link { margin-left: 6px; }
 
-  .review { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 16px; align-items: start; }
-  @media (max-width: 1000px) { .review { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .review { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .review { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   .viewer { position: sticky; top: 12px; }
   .pages { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
   .pages button { padding: 4px 12px; font-size: 14px; }
   .pages button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
   .page { position: relative; }
   .page img { width: 100%; display: block; border-radius: 4px; border: 1px solid var(--line); background: #fff; }
-  .box { position: absolute; border: 2px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; display: none; }
-  .box.on { display: block; }
+  .box { position: absolute; border: 2px solid var(--accent); border-radius: 3px; background: color-mix(in srgb, var(--accent) 14%, transparent); pointer-events: none; }
   .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  h3.sec { font-size: 16px; margin: 0 0 12px; }
 
-  h3.sec { font-size: 15px; margin: 0 0 8px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 20px; }
+  .field .k { font-size: 13px; color: var(--muted); }
+  .field .v { font-weight: 600; word-break: break-word; }
+  .field .v.none { color: var(--muted); font-weight: 400; }
+  .field .raw { font-size: 12px; color: var(--muted); white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .field .raw:hover { -webkit-line-clamp: unset; }
+  .field.warn .v { color: var(--warn); }
+  .field.edited .v { background: var(--edit-bg); }
+  .field.wide { grid-column: 1 / -1; }
+  .field textarea, .rawgrid textarea { width: 100%; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); field-sizing: content; min-height: 34px; }
+  textarea.edited { background: var(--edit-bg); }
+
   .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
-  th { text-align: left; padding: 8px 10px; background: var(--soft); border-bottom: 1px solid var(--line); vertical-align: bottom; white-space: nowrap; font-weight: 600; }
-  th .printed { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
-  th.warn, td.warn { box-shadow: inset 0 3px 0 var(--warn); }
-  td.warn { box-shadow: none; background: color-mix(in srgb, var(--warn-bg) 70%, transparent); }
-  td { border-bottom: 1px solid var(--line); padding: 0; vertical-align: top; }
-  tr.group td { background: var(--soft); color: var(--muted); font-size: 13px; padding: 6px 10px; white-space: pre-line; }
-  tr.item:hover td, tr.item.on td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-  .cell { width: 100%; min-width: 72px; border: 1px solid transparent; border-radius: 4px; padding: 6px 8px; font: inherit; background: transparent; color: var(--ink); resize: none; field-sizing: content; }
-  .cell:hover { border-color: var(--line); }
-  .cell:focus { border-color: var(--accent); outline: none; background: var(--panel); }
-  .cell.edited { background: var(--edit-bg); }
-  td.desc .cell { min-width: 220px; font-size: 13px; }
-  .was { display: block; padding: 0 8px 4px; font-size: 12px; color: var(--muted); text-decoration: line-through; }
-  .colfix { display: block; margin-top: 2px; font-weight: 400; font-size: 12px; }
-  .colfix select { font: inherit; font-size: 12px; }
-
-  .totals { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 14px; }
-  .totals label { font-size: 13px; color: var(--muted); }
-  .totals .cell { border-color: var(--line); }
-  .totals .warn .cell { border-color: var(--warn); }
+  th { text-align: left; padding: 8px 10px; background: var(--soft); border-bottom: 1px solid var(--line); white-space: nowrap; font-weight: 600; }
+  th.num, td.num { text-align: right; }
+  th.warn { color: var(--warn); box-shadow: inset 0 -3px 0 var(--warn); }
+  td { border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.warn { background: color-mix(in srgb, var(--warn-bg) 80%, transparent); }
+  td.desc { min-width: 220px; font-size: 13px; }
+  td.nowrap { white-space: nowrap; }
+  td .sub { display: block; font-size: 12px; color: var(--muted); }
+  tr.item { cursor: pointer; }
+  tr.item:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  tr.item.on td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  tr.item.changed td:first-child { box-shadow: inset 4px 0 0 #d6a800; }
+  tr.raw td { background: var(--soft); padding: 12px 14px; }
+  .rawgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 14px; }
+  .rawgrid label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .rawgrid .wide { grid-column: span 2; }
+  .rawgrid select { font: inherit; font-size: 12px; margin-left: 4px; }
 
   .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 12px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; z-index: 5; }
   .bar .who { display: flex; gap: 8px; align-items: center; }
@@ -93,7 +102,6 @@
   .bar .count { color: var(--muted); }
   .bar .go { margin-left: auto; }
 
-  .learned { margin-top: 16px; }
   .result { border-radius: 10px; padding: 16px 20px; margin-bottom: 16px; }
   .result.good { background: var(--ok-bg); }
   .result.neutral { background: var(--panel); border: 1px solid var(--line); }
@@ -126,17 +134,29 @@ const el = (tag, props = {}, ...kids) => {
   return e;
 };
 
-// Plain names for the schema's fields; the printed label from the page is shown under each.
+// Plain names; the printed label and raw text are shown next to them.
 const FIELD = {
   pkg_range: "箱號", marks: "嘜頭", description: "品名／說明", part_no: "料號", lot_no: "批號", hs_code: "稅則號",
   po_no: "PO 號碼", pkg_qty: "箱數", pkg_unit: "包裝單位", qty: "數量", qty_unit: "數量單位", qty_per_pkg: "每箱數量",
   nw_kg: "淨重", gw_kg: "毛重", nw_per_pkg_kg: "每箱淨重", gw_per_pkg_kg: "每箱毛重", cbm: "材積",
 };
-const TOTAL = { total_pkgs: "總箱數", total_pallets: "總板數", total_qty: "總數量", total_gw_kg: "總毛重", total_nw_kg: "總淨重", total_cbm: "總材積", total_gw_with_pallets_kg: "含棧板毛重", total_pkgs_in_words: "大寫總箱數" };
-const CHECK_FIELD = { total_pkgs: "pkg_qty", total_qty: "qty", total_gw_kg: "gw_kg", total_nw_kg: "nw_kg", total_cbm: "cbm" };
+const HEAD = {
+  doc_no: "文件號碼", doc_date: "文件日期", booking_no: "訂艙號碼", shipper: "寄件人", consignee: "收貨人", notify: "通知人",
+  pol: "起運港", pod: "目的港", etd: "開航日", eta: "到港日", vessel: "船名", voyage: "航次", shipping_marks: "嘜頭",
+};
+const TOTAL = { total_pkgs: "總箱數", total_pallets: "總板數", total_qty: "總數量", total_nw_kg: "總淨重", total_gw_kg: "總毛重", total_gw_with_pallets_kg: "含棧板毛重", total_cbm: "總材積", total_pkgs_in_words: "大寫總箱數" };
+const SUM_NAME = { pkg_qty: "箱數", qty: "數量", gw_kg: "毛重", nw_kg: "淨重", cbm: "材積", pallets: "板數" };
+// Which normalized column a failed check points at.
+const CHECK_COL = { total_pkgs: "pkgs", total_qty: "qty", total_gw_kg: "gw_kg", total_nw_kg: "nw_kg", total_cbm: "cbm", total_pallets: "pallets", shipping_marks: "po" };
 const DOC_TYPE = { PL: "裝箱單（Packing List）", SO: "託運單（Shipping Order）" };
+const COLS = [
+  ["pkg_range", "箱號"], ["pallets", "板數", "num"], ["pkgs", "箱數", "num"], ["po", "PO 號碼"], ["part_no", "料號"],
+  ["description", "品名"], ["qty_per_pkg", "每箱數量", "num"], ["qty", "數量", "num"], ["nw_kg", "淨重 kg", "num"], ["gw_kg", "毛重 kg", "num"],
+];
 
-let doc = null, answer = null, current = 0;
+let doc = null, answer = null, norm = null, findings = [], current = 0, openRow = null, approving = false;
+
+const fmt = (x) => (x == null ? "" : /^-?\d+(\.\d+)?$/.test(x) ? Number(x).toLocaleString("en-US", { maximumFractionDigits: 3 }) : x);
 
 function steps(n) {
   [...$("#steps").children].forEach((li, i) => { li.className = i + 1 === n ? "on" : i + 1 < n ? "done" : ""; });
@@ -152,7 +172,7 @@ function showUpload() {
   const pick = el("button", { className: "primary", textContent: "選擇 PDF", onclick: () => input.click() });
   const box = el("div", { className: "drop" },
     el("h2", { textContent: "上傳一份裝箱單或託運單" }),
-    el("p", { textContent: "系統會讀出每一列、自動核對加總，只把需要你確認的地方標出來。掃描檔也可以。" }),
+    el("p", { textContent: "系統會讀出每一列、整理成標準格式、自動核對加總，只把需要你確認的地方標出來。掃描檔也可以。" }),
     pick, input, el("p", { className: "hint", textContent: "或把 PDF 拖進這個框" }));
   input.onchange = () => input.files[0] && upload(input.files[0]);
   box.ondragover = (e) => { e.preventDefault(); box.classList.add("over"); };
@@ -171,31 +191,47 @@ async function upload(f) {
 }
 
 function start(j) {
-  doc = j; answer = structuredClone(j.run.pages.map((p) => p.output)); current = 0;
+  doc = j; answer = structuredClone(j.run.pages.map((p) => p.output)); norm = j.normalized; findings = j.run.findings;
+  current = 0; openRow = null; approving = false;
   j.approved ? showResult() : showReview();
 }
 
+// Edits are made on the raw text; the server normalizes it again and re-runs the checks.
+async function refresh() {
+  const r = await fetch("/api/normalize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer }) });
+  if (!r.ok) return;
+  const j = await r.json();
+  norm = j.normalized; findings = j.findings;
+  showReview();
+}
+
 // ---------- Step 2 ----------
-const original = (p, r, c) => doc.run.pages[p].output.rows[r]?.cells[c] ?? null;
+const orig = (pi) => doc.run.pages[pi].output;
+function rowChanged(pi, ri) {
+  return answer[pi].rows[ri].cells.some((v, ci) => (v || null) !== (orig(pi).rows[ri]?.cells[ci] ?? null))
+    || answer[pi].columns.some((c, ci) => c.field !== orig(pi).columns[ci]?.field);
+}
 function edits() {
   let n = 0;
   answer.forEach((p, pi) => {
-    p.rows.forEach((r, ri) => r.cells.forEach((v, ci) => { if ((v || null) !== original(pi, ri, ci)) n++; }));
-    p.columns.forEach((c, ci) => { if (c.field !== doc.run.pages[pi].output.columns[ci]?.field) n++; });
-    Object.entries(p.totals).forEach(([k, v]) => { if (v && v.v !== doc.run.pages[pi].output.totals[k]?.v) n++; });
+    p.rows.forEach((r, ri) => r.cells.forEach((v, ci) => { if ((v || null) !== (orig(pi).rows[ri]?.cells[ci] ?? null)) n++; }));
+    p.columns.forEach((c, ci) => { if (c.field !== orig(pi).columns[ci]?.field) n++; });
+    for (const part of ["header", "totals"]) Object.entries(p[part]).forEach(([k, v]) => { if ((v?.v || null) !== (orig(pi)[part][k]?.v ?? null)) n++; });
   });
   return n;
 }
 
 function problems() {
   // The server lists a failed check once per page it involves; show it once.
-  const byMsg = Map.groupBy(doc.run.findings, (f) => f.message);
-  return [...byMsg].map(([, list]) => {
-    const f = list[0];
-    const key = f.path.split(".")[1];
-    const m = f.message.match(/rows add up to ([\d.]+) \w+, the totals line says (.+)$/);
-    const text = m ? `${TOTAL[key] ?? key}對不上：每列加起來是 ${m[1]}，合計列印的是 ${m[2]}` : f.message.replace(/container number (\S+) fails the ISO 6346 check digit/, "貨櫃號碼 $1 的檢查碼不對");
-    return { text, field: CHECK_FIELD[key], total: key, pages: list.map((x) => x.page) };
+  return [...Map.groupBy(findings, (f) => f.message)].map(([msg, list]) => {
+    const key = list[0].path.split(".")[1].replace(/\[\d+\]/, "");
+    let m, text = msg;
+    if ((m = msg.match(/^rows add up to ([\d.]+) (\w+), the totals line says (.+)$/))) text = `${SUM_NAME[m[2]] ?? m[2]}對不上：每列加起來是 ${fmt(m[1])}，合計列印的是 ${m[3]}`;
+    else if ((m = msg.match(/^PO in the shipping marks but in no row: (.+)$/))) text = `嘜頭上列了 PO ${m[1]}，但明細裡沒有`;
+    else if ((m = msg.match(/^PO in the rows but not in the shipping marks: (.+)$/))) text = `明細裡的 PO ${m[1]} 沒有出現在嘜頭上`;
+    else if ((m = msg.match(/^(\w+) differs between pages: page (\d+) has (.+), page (\d+) has (.+)$/))) text = `${HEAD[m[1]] ?? m[1]}前後不一致：第 ${m[2]} 頁是 ${m[3]}，第 ${m[4]} 頁是 ${m[5]}`;
+    else if ((m = msg.match(/^container number (\S+) fails/))) text = `貨櫃號碼 ${m[1]} 的檢查碼不對`;
+    return { text, col: CHECK_COL[key], key, pages: list.map((x) => x.page).sort() };
   });
 }
 
@@ -205,100 +241,139 @@ function sourceLine() {
   return `這家第一次出現，用${p?.level === "class" ? `${doc.run.cls} 的通用讀法` : "最基本的讀法"}。你確認後，系統會記住這家的格式。`;
 }
 
+// A raw text editor bound to one value of the model output.
+function rawEditor(get, set, before, onDone) {
+  const ta = el("textarea", { value: get() ?? "", rows: 1 });
+  const mark = () => ta.classList.toggle("edited", (ta.value || null) !== (before ?? null));
+  ta.oninput = () => { set(ta.value === "" ? null : ta.value); mark(); updateBar(); };
+  ta.onchange = onDone;
+  mark();
+  return ta;
+}
+
 function showReview() {
   steps(2);
   const run = doc.run;
-  const issuer = (run.issuer ?? "").split("\n")[0] || "（沒讀到寄件公司）";
-  const rows = run.pages.reduce((n, p) => n + p.output.rows.filter((r) => r.t === "item" || r.t === "ditto").length, 0);
+  const issuer = norm.header.shipper?.v ?? ((run.issuer ?? "").split("\n")[0] || "（沒讀到寄件公司）");
   const probs = problems();
-  const warnFields = new Set(probs.map((p) => p.field).filter(Boolean));
-  const warnTotals = new Set(probs.map((p) => p.total));
+  const warnCols = new Set(probs.map((p) => p.col).filter(Boolean));
+  const warnKeys = new Set(probs.map((p) => p.key));
 
   const todo = probs.length
     ? el("div", { className: "todo" }, el("h3", { textContent: `需要你確認 ${probs.length} 處` }),
-        el("ol", {}, ...probs.map((p) => el("li", {}, p.text, "。請對照原頁檢查標橘色的欄位。",
-          el("button", { className: "link", textContent: `看第 ${p.pages[0]} 頁`, onclick: () => { current = p.pages[0] - 1; showReview(); } })))),
-        el("p", { className: "hint", textContent: "有時是讀錯一個數字，有時是合計本身就含棧板重量。改正表格裡的值；如果原本就對，直接確認即可。" }))
-    : el("div", { className: "todo clear", textContent: "自動核對全部通過：每列加總和合計列一致。快速看過一遍沒問題就可以確認。" });
+        el("ol", {}, ...probs.map((p) => el("li", {}, p.text, "。",
+          el("button", { className: "link", textContent: `看第 ${p.pages.join("、")} 頁`, onclick: () => { current = p.pages[0] - 1; openRow = null; showReview(); } })))),
+        el("p", { className: "hint", textContent: "標橘色的是相關欄位。點那一列可以看到原文並修改；如果原本就對（例如合計本來就含棧板重量），直接確認即可。" }))
+    : el("div", { className: "todo clear", textContent: "自動核對全部通過：加總、板數、嘜頭上的 PO、各頁抬頭都一致。快速看過一遍沒問題就可以確認。" });
 
   const summary = el("section", { className: "summary" },
     el("h2", { textContent: `${issuer} 的${DOC_TYPE[run.cls] ?? "文件"}` }),
-    el("p", { textContent: `共 ${run.pages.length} 頁，讀出 ${rows} 列。${sourceLine()}` }), todo);
+    el("p", { textContent: `共 ${run.pages.length} 頁，${norm.rows.length} 列明細。${sourceLine()}` }), todo);
 
-  // Page image, with the row being edited outlined.
+  // Page viewer with the open row outlined.
   const pg = run.pages[current];
   const page = el("div", { className: "page" }, el("img", { src: `/api/documents/${doc.id}/pages/${pg.page_no}.png`, alt: `原文件第 ${pg.page_no} 頁` }));
-  const out = answer[current];
-  const boxes = out.rows.map((r) => {
-    const [x0, y0, x1, y1] = r.box;
+  if (openRow && openRow.page === current) {
+    const [x0, y0, x1, y1] = answer[current].rows[openRow.row].box;
     const b = el("div", { className: "box" });
     Object.assign(b.style, { left: `${x0 / 10}%`, top: `${y0 / 10}%`, width: `${(x1 - x0) / 10}%`, height: `${(y1 - y0) / 10}%` });
     page.append(b);
-    return b;
-  });
+  }
   const pageTabs = run.pages.length > 1 ? el("div", { className: "pages" }, ...run.pages.map((p, i) =>
     el("button", { className: i === current ? "on" : "", textContent: `第 ${p.page_no} 頁`, onclick: () => { current = i; showReview(); } }))) : null;
-  const viewer = el("section", { className: "card viewer" }, pageTabs, page, el("p", { className: "hint", textContent: "點右邊任一列，原頁上會框出它的位置。" }));
+  const viewer = el("section", { className: "card viewer" }, pageTabs, page, el("p", { className: "hint", textContent: "點右邊的明細列，原頁會跳到那一頁並框出位置。" }));
 
-  // Table: plain column names, printed label below, cells edit in place.
-  const head = el("tr", {}, ...out.columns.map((c, ci) => {
-    const origField = doc.run.pages[current].output.columns[ci]?.field;
-    const sel = el("select", { "aria-label": `${c.label} 這一欄是` }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: n, selected: f === c.field })));
-    sel.onchange = () => { c.field = sel.value; showReview(); };
-    const fix = el("span", { className: "colfix" });
-    const open = el("button", { className: "link", textContent: c.field !== origField ? "已改欄位" : "欄位不對？", onclick: () => fix.replaceChildren("這一欄是 ", sel) });
-    fix.append(open);
-    return el("th", { className: warnFields.has(c.field) ? "warn" : "" }, FIELD[c.field] ?? c.field, el("span", { className: "printed", textContent: `原文：${c.label.replace(/\n/g, " ")}` }), fix);
-  }));
+  // Header: normalized value, with the printed text when it differs.
+  const headCard = el("section", { className: "card" }, el("h3", { className: "sec", textContent: "文件抬頭" }),
+    el("div", { className: "fields" }, ...Object.entries(HEAD).map(([k, name]) => {
+      const n = norm.header[k];
+      const pi = (n?.page ?? 1) - 1;
+      const before = orig(pi).header[k]?.v ?? null;
+      const now = answer[pi].header[k]?.v ?? null;
+      const box = el("div", { className: `field${k === "shipping_marks" ? " wide" : ""}${warnKeys.has(k) ? " warn" : ""}${(now || null) !== before ? " edited" : ""}` },
+        el("div", { className: "k", textContent: name }),
+        el("div", { className: `v${n?.v ? "" : " none"}`, textContent: n?.v ?? "—" }),
+        n?.raw && n.raw !== n.v ? el("div", { className: "raw", textContent: `原文：${n.raw}` }) : null);
+      const edit = el("button", { className: "link", textContent: n?.raw ? "修改" : "補上", onclick: () => {
+        const target = answer[pi].header;
+        target[k] ??= { v: "", box: [0, 0, 0, 0] };
+        edit.replaceWith(rawEditor(() => target[k].v, (x) => { target[k].v = x ?? ""; }, before, refresh));
+      } });
+      box.append(edit);
+      return box;
+    })));
+
+  // Rows: normalized values; click a row to see and fix the printed text.
+  const head = el("tr", {}, el("th", { textContent: "頁" }), ...COLS.map(([k, name, cls]) => el("th", { className: `${cls ?? ""} ${warnCols.has(k) ? "warn" : ""}`, textContent: name })));
   const body = [];
-  out.rows.forEach((r, ri) => {
-    if (r.t !== "item" && r.t !== "ditto") {
-      body.push(el("tr", { className: "group" }, el("td", { colSpan: out.columns.length, textContent: r.cells.filter(Boolean).join("　") })));
-      return;
-    }
-    const tr = el("tr", { className: "item" });
-    r.cells.forEach((v, ci) => {
-      const field = out.columns[ci]?.field;
-      const was = original(current, ri, ci);
-      const ta = el("textarea", { className: "cell", value: v ?? "", rows: 1, "aria-label": `${FIELD[field] ?? field}，第 ${ri + 1} 列` });
-      const wasEl = el("span", { className: "was" });
-      const mark = () => {
-        const changed = (ta.value || null) !== was;
-        ta.classList.toggle("edited", changed);
-        wasEl.textContent = changed ? `原本讀到：${was ?? "（空白）"}` : "";
-      };
-      ta.oninput = () => { r.cells[ci] = ta.value === "" ? null : ta.value; mark(); updateBar(); };
-      ta.onfocus = () => { boxes.forEach((b, i) => b.classList.toggle("on", i === ri)); tr.parentElement.querySelectorAll("tr").forEach((x) => x.classList.remove("on")); tr.classList.add("on"); };
-      mark();
-      tr.append(el("td", { className: `${field === "description" || field === "marks" ? "desc" : ""} ${warnFields.has(field) ? "warn" : ""}` }, ta, wasEl));
-    });
+  norm.rows.forEach((r) => {
+    const pi = r.page - 1, isOpen = openRow?.page === pi && openRow?.row === r.row;
+    const tr = el("tr", { className: `item${isOpen ? " on" : ""}${rowChanged(pi, r.row) ? " changed" : ""}`, title: "點一下看原文" },
+      el("td", { textContent: r.page }),
+      ...COLS.map(([k, , cls]) => {
+        const x = r[k === "pkg_range" ? "pkg_from" : k];
+        let content = fmt(x?.v);
+        if (k === "pkg_range") content = r.pkg_from.v ? (r.pkg_from.v === r.pkg_to.v ? r.pkg_from.v : `${r.pkg_from.v}–${r.pkg_to.v}`) : "";
+        if (k === "qty" && r.qty_unit.v) content = `${content} ${r.qty_unit.v}`;
+        const td = el("td", { className: `${cls ?? ""} ${k === "description" ? "desc" : "nowrap"} ${warnCols.has(k) ? "warn" : ""}`, textContent: content });
+        if (k === "part_no" && r.revision.v) td.append(el("span", { className: "sub", textContent: `版次 ${r.revision.v}` }));
+        if (k === "description" && (r.hs_code.v || r.lot_no.v)) td.append(el("span", { className: "sub", textContent: [r.hs_code.v && `稅則 ${r.hs_code.v}`, r.lot_no.v && `批號 ${r.lot_no.v}`].filter(Boolean).join("　") }));
+        return td;
+      }));
+    tr.onclick = () => { openRow = isOpen ? null : { page: pi, row: r.row }; current = pi; showReview(); };
     body.push(tr);
+    if (isOpen) body.push(el("tr", { className: "raw" }, el("td", { colSpan: COLS.length + 1 }, rawRow(pi, r.row))));
   });
-  const table = el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...body)));
+  const rowsCard = el("section", { className: "card" }, el("h3", { className: "sec", textContent: "明細" }),
+    el("div", { className: "table-wrap" }, el("table", {}, el("thead", {}, head), el("tbody", {}, ...body))));
 
-  const totals = Object.entries(out.totals).filter(([, v]) => v);
-  const totalsBox = totals.length ? el("div", { className: "totals" }, ...totals.map(([k, v]) => {
-    const orig = doc.run.pages[current].output.totals[k]?.v ?? null;
-    const ta = el("textarea", { className: "cell", value: v.v, rows: 1, id: `t-${k}` });
-    const mark = () => ta.classList.toggle("edited", ta.value !== orig);
-    ta.oninput = () => { v.v = ta.value; mark(); updateBar(); };
-    mark();
-    return el("div", { className: warnTotals.has(k) ? "warn" : "" }, el("label", { htmlFor: `t-${k}`, textContent: TOTAL[k] ?? k }), ta);
-  })) : null;
+  // Totals: normalized, editable on the page that prints them.
+  const totals = Object.entries(TOTAL).filter(([k]) => norm.totals[k]?.raw);
+  const totalsCard = totals.length ? el("section", { className: "card" }, el("h3", { className: "sec", textContent: "合計" }),
+    el("div", { className: "fields" }, ...totals.map(([k, name]) => {
+      const n = norm.totals[k];
+      const pi = answer.map((p) => !!p.totals[k]?.v).lastIndexOf(true);
+      const before = pi < 0 ? null : orig(pi).totals[k]?.v ?? null;
+      const unit = k.endsWith("_kg") ? " kg" : "";
+      const box = el("div", { className: `field${warnKeys.has(k) ? " warn" : ""}${pi >= 0 && answer[pi].totals[k]?.v !== before ? " edited" : ""}` },
+        el("div", { className: "k", textContent: name }),
+        el("div", { className: "v", textContent: `${fmt(n.v)}${n.v ? unit : ""}` }),
+        n.raw !== n.v ? el("div", { className: "raw", textContent: `原文：${n.raw}` }) : null);
+      if (pi >= 0) {
+        const edit = el("button", { className: "link", textContent: "修改", onclick: () =>
+          edit.replaceWith(rawEditor(() => answer[pi].totals[k].v, (x) => { answer[pi].totals[k].v = x ?? ""; }, before, refresh)) });
+        box.append(edit);
+      }
+      return box;
+    }))) : null;
 
-  const data = el("section", { className: "card" },
-    el("h3", { className: "sec", textContent: `第 ${pg.page_no} 頁的明細` }), table,
-    totalsBox ? el("h3", { className: "sec", style: "margin-top:16px", textContent: "合計列" }) : null, totalsBox);
+  $("#app").replaceChildren(summary, el("div", { className: "review" }, viewer, el("div", {}, headCard, rowsCard, totalsCard)));
+  showBar();
+}
 
-  $("#app").replaceChildren(summary, el("div", { className: "review" }, viewer, data));
-  showBar(issuer);
+// The printed text of one row, cell by cell, with the column mapping; edits re-normalize on leaving the field.
+function rawRow(pi, ri) {
+  const p = answer[pi], r = p.rows[ri];
+  return el("div", {},
+    el("div", { className: "rawgrid" }, ...p.columns.map((c, ci) => {
+      const sel = el("select", { "aria-label": `「${c.label}」這一欄是` }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: n, selected: f === c.field })));
+      sel.onchange = () => { c.field = sel.value; updateBar(); refresh(); };
+      const ta = rawEditor(() => r.cells[ci], (x) => { r.cells[ci] = x; }, orig(pi).rows[ri]?.cells[ci] ?? null, refresh);
+      ta.setAttribute("aria-label", `${c.label} 原文`);
+      return el("div", { className: c.field === "description" || c.field === "marks" ? "wide" : "" },
+        el("label", {}, `原文欄「${c.label.replace(/\n/g, " ")}」→`, sel), ta);
+    })),
+    el("p", { className: "hint", textContent: "這裡是文件上印的原文。改原文會重新整理成上面的標準格式；欄位對應錯了就改下拉選單。" }));
 }
 
 // ---------- Step 3 ----------
 let senderInput = null;
-function showBar(issuer) {
+function showBar() {
   const bar = $("#bar");
-  senderInput = el("input", { type: "text", id: "sender", value: doc.run.sender ?? issuer.replace(/\b(CO|CORP|INC|LTD|LIMITED|ENTERPRISE)\b\.?|[.,]/gi, "").trim() });
+  if (!senderInput || bar.hidden) {
+    const issuer = norm.header.shipper?.v ?? (doc.run.issuer ?? "").split("\n")[0];
+    senderInput = el("input", { type: "text", id: "sender", value: doc.run.sender ?? issuer.replace(/\b(CO|CORP|INC|LTD|LIMITED|ENTERPRISE)\b\.?|[.,]/gi, "").trim() });
+  }
   bar.replaceChildren(
     el("div", { className: "who" }, el("label", { htmlFor: "sender", textContent: "寄件公司" }), senderInput),
     el("span", { className: "count", id: "count" }),
@@ -313,7 +388,9 @@ function updateBar() {
 }
 
 async function approve() {
+  if (approving) return;
   if (!senderInput.value.trim()) return senderInput.focus();
+  approving = true;
   const n = edits();
   steps(3);
   $("#bar").hidden = true;
@@ -322,7 +399,7 @@ async function approve() {
     n ? "系統會寫一版新的讀法，並用它重讀這家以前確認過的文件，確定沒有變差才會採用。約 30 秒到 2 分鐘。" : ""));
   const r = await fetch(`/api/documents/${doc.id}/approve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sender: senderInput.value, answer }) });
   const j = await r.json();
-  if (!r.ok) { $("#app").replaceChildren(el("div", { className: "busy" }, el("strong", { textContent: "沒有存成功" }), j.error.message)); return; }
+  if (!r.ok) { approving = false; $("#app").replaceChildren(el("div", { className: "busy" }, el("strong", { textContent: "沒有存成功" }), j.error.message)); return; }
   doc.approved = { sender: senderInput.value.trim().toUpperCase(), learn: j.learn, corrected: j.corrected };
   showResult();
 }
@@ -345,10 +422,10 @@ async function showResult() {
     card = el("div", { className: "result warn" },
       el("h2", { textContent: "這次的修正系統學不會" }),
       el("p", { textContent: `你改了 ${a.corrected} 處，但試了 ${l.tries} 種新寫法，都沒有讓這家的文件讀得更好，所以維持原本的讀法。` }),
-      el("p", { textContent: `以後這家的這些欄位會固定請你確認：${l.always_review.map((p) => FIELD[p.split(".").pop()] ?? TOTAL[p.split(".").pop()] ?? p).join("、")}。` }));
+      el("p", { textContent: `以後這家的這些欄位會固定請你確認：${l.always_review.map((p) => { const k = p.split(".").pop(); return FIELD[k] ?? HEAD[k] ?? TOTAL[k] ?? p; }).join("、")}。` }));
   }
   const hist = el("ul", { className: "history" });
-  $("#app").replaceChildren(card, el("section", { className: "card learned" }, el("h3", { className: "sec", textContent: "系統記住的各家讀法" }), hist));
+  $("#app").replaceChildren(card, el("section", { className: "card" }, el("h3", { className: "sec", textContent: "系統記住的各家讀法" }), hist));
   const h = await (await fetch("/api/profiles")).json();
   if (!h.length) return hist.replaceChildren(el("li", { className: "muted", textContent: "還沒有。確認一份有修正的文件後，這裡會出現那家的讀法。" }));
   hist.replaceChildren(...h.flatMap((s) => s.versions.slice().reverse().map((v) => el("li", {},

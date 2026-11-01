@@ -15,6 +15,8 @@ import { fileStore } from "../profiles/file-store.ts";
 import { diff, learn, seed, type Page } from "../profiles/loop.ts";
 import { sparkRewrite } from "../profiles/rewrite.ts";
 import { schemas } from "../shared/model-output.ts";
+import { normalize } from "../normalize/normalize.ts";
+import { checkDocument } from "../rules/checks.ts";
 
 const DATA = process.env.DATA_DIR ?? "data";
 const RUNS = join(DATA, "runs");
@@ -72,6 +74,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return res.end(readFileSync(png));
   }
   if (m && req.method === "GET" && !m[2] && !m[4]) return json(res, 200, view(load(m[1]!)));
+  // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.
+  if (req.method === "POST" && url.pathname === "/api/normalize") {
+    const answer = (JSON.parse((await body(req)).toString("utf8")).answer as unknown[]).map((p) => schemas.compact.parse(p));
+    return json(res, 200, { normalized: normalize(answer), findings: checkDocument(answer) });
+  }
   if (m && req.method === "POST" && m[4]) {
     const d = load(m[1]!);
     // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
@@ -94,7 +101,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 }
 
 // The browser gets the run without the page bytes.
-const view = (d: Saved) => ({ id: d.id, name: d.name, run: d.run, approved: d.approved ?? null, spent: spent() });
+const view = (d: Saved) => ({ id: d.id, name: d.name, run: d.run, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ?? null, spent: spent() });
 
 const port = Number(process.env.PORT ?? 8787);
 createServer((req, res) => handle(req, res).catch((e) => json(res, (e as { status?: number }).status ?? 500, { error: { code: "failed", message: (e as Error).message } })))
