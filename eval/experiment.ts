@@ -1,14 +1,13 @@
 // pnpm experiment [--step effort] [--docs N] [--max-spend USD] [--concurrency N]
 // The M1 reading experiment: one factor at a time, scored on the synthetic set, stopping at the spend cap.
 // Raw model replies are cached on disk by request, so a rerun of the same option costs nothing.
-import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { gateway, NonRetryableError } from "../src/gateway/gateway.ts";
 import { memoryLedger } from "../src/gateway/ledger.ts";
-import { metaClient, type ChatRequest, type MetaClient } from "../src/gateway/meta-client.ts";
-import { costUsd } from "../src/gateway/models.ts";
+import { metaClient, type ChatRequest } from "../src/gateway/meta-client.ts";
+import { cachedClient, pool } from "./cache.ts";
 import { extractInstructions, textPageMessage } from "../src/gateway/prompts.ts";
 import { readPdf } from "../src/pipeline/pdf.ts";
 import { gridItems, serialize } from "../src/pipeline/text-serialize.ts";
@@ -41,29 +40,7 @@ const STEPS: Record<string, Option[]> = {
   })),
 };
 
-const CACHE = "eval/out/cache";
 const maxSpend = Number(args["max-spend"]);
-let spent = 0;
-
-function cachedClient(live: MetaClient): MetaClient {
-  mkdirSync(CACHE, { recursive: true });
-  return async (req, signal) => {
-    const file = join(CACHE, `${createHash("sha256").update(JSON.stringify(req)).digest("hex")}.json`);
-    if (existsSync(file)) return { ...JSON.parse(readFileSync(file, "utf8")), cached: true };
-    if (spent >= maxSpend) throw new Error(`spend cap US$${maxSpend} reached`);
-    const r = await live(req, signal);
-    spent += costUsd(req.model, r.usage);
-    writeFileSync(file, JSON.stringify(r));
-    return r;
-  };
-}
-
-async function pool<T>(xs: T[], n: number, f: (x: T) => Promise<void>) {
-  let i = 0;
-  await Promise.all(Array.from({ length: n }, async () => {
-    while (i < xs.length) await f(xs[i++]!);
-  }));
-}
 
 async function main() {
   const options = STEPS[args.step!];
@@ -81,7 +58,7 @@ async function main() {
   }))).flat();
 
   process.loadEnvFile(".dev.vars");
-  const client = cachedClient(metaClient(process.env.META_API_KEY!));
+  const { client, spent } = cachedClient(metaClient(process.env.META_API_KEY!), maxSpend);
   const report: unknown[] = [];
   console.log(`${docs.length} documents, ${pages.length} pages; spend cap US$${maxSpend}\n`);
 
@@ -130,7 +107,7 @@ async function main() {
   mkdirSync("eval/out/experiment", { recursive: true });
   const file = `eval/out/experiment/${args.step}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
   writeFileSync(file, JSON.stringify(report, null, 2));
-  console.log(`\nspent this run: US$${spent.toFixed(2)}; report: ${file}`);
+  console.log(`\nspent this run: US$${spent().toFixed(2)}; report: ${file}`);
 }
 
 await main();
