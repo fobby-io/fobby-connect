@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import type { LineField } from "../shared/fields.ts";
+import type { Variant } from "../shared/model-output.ts";
 
 const TEMPLATE = readFileSync(new URL("./prompts/extract-page.v1.md", import.meta.url), "utf8");
 
@@ -41,9 +42,18 @@ function profilePart(p: ProfilePrompt): string {
   ].join("\n");
 }
 
+// What each M1 output variant asks for beyond the shared rules.
+const VARIANT_RULES: Record<Variant, string> = {
+  compact: "- Each header, container and totals value carries its box; each table row carries one box around the whole row.",
+  per_field: "- Every value, including every table cell, carries its own box.",
+  cell_box: "- Each table row carries one box around the whole row, and pbox holds the box of each listed protected cell (null when the row has no such cell).",
+  item_ids: "- Instead of boxes, every value and every table cell cites ids: the ids of the text items it was read from, in reading order. Cite only ids from this page.",
+};
+
 /** The cached prefix: instructions, then the profile part, then examples. Page content goes last, separately. */
-export function extractInstructions(profile: ProfilePrompt, examples: string[] = []): string {
-  return TEMPLATE.replace("{{profile}}", profilePart(profile))
+export function extractInstructions(profile: ProfilePrompt, examples: string[] = [], variant: Variant = "compact"): string {
+  return TEMPLATE.replace("{{variant}}", VARIANT_RULES[variant])
+    .replace("{{profile}}", profilePart(profile))
     .replace("{{examples}}", examples.length ? `Examples from this layout:\n\n${examples.join("\n\n")}` : "")
     .trimEnd();
 }

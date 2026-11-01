@@ -4,6 +4,7 @@ Rules:
 - Copy every value exactly as printed: same characters, separators, units and spelling. Do not convert, calculate, translate or correct anything.
 - Return the value only, without its printed label ("No.: PL-1" gives "PL-1").
 - Boxes are [x0, y0, x1, y1] integers on a 0-1000 grid of the page, origin at the top left. With text input, use the boxes of the items you read the value from.
+{{variant}}
 - header: one value per key, or null when this page does not print it. A party (shipper, consignee, notify) is its full name and address as printed, lines separated by "\n". "SAME AS CONSIGNEE" for notify means null.
 - containers: one entry per container printed on the page. A container request without numbers, such as "40HQ X 2", is one entry with iso_type "40HQ", qty "2" and null number and seal.
 - columns: the table's columns from left to right, each with its field and its printed header label. Use only the listed fields; leave out columns that match none.

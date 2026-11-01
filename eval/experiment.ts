@@ -12,7 +12,7 @@ import { costUsd } from "../src/gateway/models.ts";
 import { extractInstructions, textPageMessage } from "../src/gateway/prompts.ts";
 import { readPdf } from "../src/pipeline/pdf.ts";
 import { gridItems, serialize } from "../src/pipeline/text-serialize.ts";
-import type { ModelOutput, Variant } from "../src/shared/model-output.ts";
+import { unknownIds, type ModelOutput, type Variant } from "../src/shared/model-output.ts";
 import { scorePage, summarize, type FieldResult } from "./score.ts";
 import { generate } from "./synth/generator.ts";
 import type { Expected } from "./synth/types.ts";
@@ -20,6 +20,7 @@ import type { Expected } from "./synth/types.ts";
 const { values: args } = parseArgs({
   options: {
     step: { type: "string", default: "effort" },
+    effort: { type: "string", default: "minimal" },
     docs: { type: "string", default: "30" },
     "max-spend": { type: "string", default: "40" },
     concurrency: { type: "string", default: "6" },
@@ -34,6 +35,10 @@ const STEPS: Record<string, Option[]> = {
     { name: "effort=low", variant: "compact", effort: "low", profile: true },
     { name: "effort=default", variant: "compact", profile: true },
   ],
+  // Step 2 keeps step 1's winner (--effort).
+  format: (["compact", "per_field", "cell_box", "item_ids"] as const).map((variant) => ({
+    name: `format=${variant}`, variant, effort: args.effort as Option["effort"], profile: true,
+  })),
 };
 
 const CACHE = "eval/out/cache";
@@ -87,10 +92,11 @@ async function main() {
     const perPage: { doc: string; page: number; rows: number; out: number; ms: number; cost: number }[] = [];
     const failures: string[] = [];
     await pool(pages, Number(args.concurrency), async ({ e, page_no, items }) => {
-      const instructions = extractInstructions(opt.profile ? e.profile : {});
+      const instructions = extractInstructions(opt.profile ? e.profile : {}, [], opt.variant);
       try {
         const r = await g.extractPage({
           step_id: `${e.doc_id}:${page_no}:${opt.name}`, variant: opt.variant, effort: opt.effort, instructions, synthetic: true,
+          check: opt.variant === "item_ids" ? (o) => { const bad = unknownIds(o as ModelOutput<"item_ids">, items.length); return bad.length ? `unknown item ids: ${bad.join(", ")}` : null; } : undefined,
           page: [{ type: "text", text: textPageMessage(page_no, e.pages.length, serialize(items)) }],
         });
         fields.push(...scorePage(e, page_no, r.output as ModelOutput<"compact">, items, "text"));

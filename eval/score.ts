@@ -1,4 +1,4 @@
-import { columnRanges, groundCell, groundHeader, norm, type GroundState } from "../src/pipeline/grounding.ts";
+import { columnRanges, groundCell, groundHeader, groundIds, GROUNDING, norm, unionBox, type GroundState } from "../src/pipeline/grounding.ts";
 import type { GridItem } from "../src/pipeline/text-serialize.ts";
 import { lookupPort } from "../src/reference/unlocode.ts";
 import { isKey, isProtected, type HeaderKey, type LineField, type TotalsKey } from "../src/shared/fields.ts";
@@ -41,9 +41,17 @@ export function canonical(field: string, raw: string | null, label?: string): st
 
 const exp = (field: string, v: string | null | undefined) => (v == null ? null : canonical(field, v));
 
+// Any variant's output, read loosely: values are `{v, box}` or `{v, ids}`, cells are strings or values.
+type Val = { v: string; box?: Box; ids?: number[] };
+type AnyRow = { t: string; cells: (string | Val | null)[]; box?: Box; pbox?: Record<string, Box | null> };
+type AnyOut = Omit<ModelOutput<"compact">, "header" | "containers" | "rows" | "totals"> & {
+  header: Record<string, Val | null>; containers: Record<string, Val | null>[]; rows: AnyRow[]; totals: Record<string, Val | null>;
+};
+
 export function scorePage(
-  e: Expected, page_no: number, out: ModelOutput<"compact">, items: GridItem[], route: "text" | "hybrid" | "vision",
+  e: Expected, page_no: number, output: unknown, items: GridItem[], route: "text" | "hybrid" | "vision",
 ): FieldResult[] {
+  const out = output as AnyOut;
   const res: FieldResult[] = [];
   const push = (path: string, expected: string | null, got: string | null, state: GroundState | null) => {
     if (expected === null && got === null) return;
@@ -51,17 +59,30 @@ export function scorePage(
   };
   const o = { route };
   const last = page_no === e.pages.length;
+  const m = GROUNDING.box_margin;
+  const cited = (ids: number[]) => ids.map((id) => items[id]).filter((i): i is GridItem => !!i);
+
+  /** Header, container and totals values: the box plus margin, or the cited items' box for item_ids. */
+  const groundVal = (v: Val): GroundState => {
+    if (v.ids) {
+      const c = cited(v.ids);
+      if (!c.length) return "contradicted";
+      const b = unionBox(c);
+      return groundIds(v.v, v.ids, [b[0] - m, b[1] - m, b[2] + m, b[3] + m], items, o);
+    }
+    return groundHeader(v.v, v.box!, items, o);
+  };
 
   if (page_no === 1) {
     for (const k of Object.keys(out.header) as HeaderKey[]) {
-      const v = out.header[k];
-      push(`header.${k}`, exp(k, e.header[k]), canonical(k, v?.v ?? null), v ? groundHeader(v.v, v.box, items, o) : null);
+      const v = out.header[k] ?? null;
+      push(`header.${k}`, exp(k, e.header[k]), canonical(k, v?.v ?? null), v ? groundVal(v) : null);
     }
     const n = Math.max(e.containers.length, out.containers.length);
     for (let i = 0; i < n; i++) {
       for (const f of ["number", "iso_type", "seal"] as const) {
         const v = out.containers[i]?.[f] ?? null;
-        push(`header.containers[${i}].${f}`, exp(f, e.containers[i]?.[f]), canonical(f, v?.v ?? null), v ? groundHeader(v.v, v.box, items, o) : null);
+        push(`header.containers[${i}].${f}`, exp(f, e.containers[i]?.[f]), canonical(f, v?.v ?? null), v ? groundVal(v) : null);
       }
     }
   }
@@ -73,19 +94,33 @@ export function scorePage(
   // on description and part number if the experiment shows row-count mismatches.
   for (let i = 0; i < Math.max(want.length, got.length); i++) {
     const w = want[i], g = got[i];
+    // item_ids rows have no box: it is the union of every item the row cites.
+    const rowBox = g?.box ?? (g ? unionBox(cited(g.cells.flatMap((c) => (c && typeof c === "object" ? c.ids ?? [] : [])))) : undefined);
     for (const f of Object.keys(w?.fields ?? {}) as LineField[]) {
       const col = out.columns.findIndex((c) => c.field === f);
       const cell = g && col >= 0 ? g.cells[col] ?? null : null;
-      const state = cell !== null && g ? groundCell(cell, (g as unknown as { box: Box }).box, ranges[col] ?? null, items, o) : null;
-      push(`row.${f}`, exp(f, w?.fields[f]), canonical(f, cell, out.columns[col]?.label), state);
+      const v = cell === null ? null : typeof cell === "string" ? cell : cell.v;
+      let state: GroundState | null = null;
+      if (v !== null && g) {
+        const range = ranges[col] ?? null;
+        const pbox = g.pbox?.[f];
+        if (typeof cell === "object" && cell?.ids) {
+          const [x0, x1] = range ?? [rowBox![0], rowBox![2]];
+          state = groundIds(v, cell.ids, [x0, rowBox![1] - 3, x1, rowBox![3] + 3], items, o);
+        } else if (typeof cell === "object" && cell?.box) state = groundHeader(v, cell.box, items, o);
+        else if (pbox) state = groundHeader(v, pbox, items, o);
+        else if (rowBox && Number.isFinite(rowBox[0])) state = groundCell(v, rowBox, range, items, o);
+        else state = "contradicted";
+      }
+      push(`row.${f}`, exp(f, w?.fields[f]), canonical(f, v, out.columns[col]?.label), state);
     }
   }
 
   if (last) {
     for (const k of Object.keys(e.totals) as TotalsKey[]) {
       if (k === "total_pkgs_in_words") continue;
-      const v = out.totals[k];
-      push(`totals.${k}`, exp(k, e.totals[k]), canonical(k, v?.v ?? null), v ? groundHeader(v.v, v.box, items, o) : null);
+      const v = out.totals[k] ?? null;
+      push(`totals.${k}`, exp(k, e.totals[k]), canonical(k, v?.v ?? null), v ? groundVal(v) : null);
     }
   }
   return res;
