@@ -3,7 +3,7 @@
 
 export const HEADER_KEYS = [
   "doc_no", "doc_date", "booking_no", "shipper", "consignee", "notify",
-  "pol", "pod", "etd", "vessel", "voyage",
+  "pol", "pod", "etd", "eta", "vessel", "voyage", "shipping_marks",
 ] as const;
 export type HeaderKey = (typeof HEADER_KEYS)[number];
 

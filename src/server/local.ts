@@ -74,7 +74,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (m && req.method === "GET" && !m[2] && !m[4]) return json(res, 200, view(load(m[1]!)));
   if (m && req.method === "POST" && m[4]) {
     const d = load(m[1]!);
-    if (d.approved) return json(res, 409, { error: { code: "already_approved", message: "This document was already approved." } });
+    // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
+    if (d.approved) return json(res, 200, { corrected: d.approved.corrected, learn: d.approved.learn, spent: spent() });
     const b = JSON.parse((await body(req)).toString("utf8")) as { sender: string; answer: Page[] };
     const sender = b.sender.trim().toUpperCase();
     if (!sender) return json(res, 400, { error: { code: "sender_required", message: "Name the sender before approving." } });

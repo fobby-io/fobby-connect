@@ -2,6 +2,8 @@ import Decimal from "decimal.js";
 import type { ModelOutput } from "../shared/model-output.ts";
 import { parseNumber } from "../transforms/steps/parse-number.ts";
 import { isValidContainerNo } from "./containers.ts";
+import { marksPos, normalize, samePo } from "../normalize/normalize.ts";
+import { norm } from "../pipeline/grounding.ts";
 
 // Step 5 of the reading loop: code checks, no model cost. A finding names the page so step 6 can re-read only that page.
 
@@ -42,6 +44,32 @@ export function checkDocument(pages: Page[]): Finding[] {
         out.push({ page: i + 1, path: `totals.${total}`, message: `rows add up to ${sum.toString()} ${field}, the totals line says ${printed.v}` });
     }
   }
+  // Every page repeats the same header; a value that differs between pages was misread on one of them.
+  const perPage = pages.map((p) => normalize([p]).header);
+  for (const k of ["doc_no", "pol", "pod", "etd", "vessel", "voyage"]) {
+    const seen = perPage.map((h, i) => ({ i, val: h[k]?.v ? norm(h[k]!.v!) : null })).filter((x) => x.val);
+    const first = seen[0];
+    for (const s of seen.slice(1)) if (s.val !== first!.val)
+      out.push({ page: s.i + 1, path: `header.${k}`, message: `${k} differs between pages: page ${first!.i + 1} has ${first!.val}, page ${s.i + 1} has ${s.val}` });
+  }
+
+  const n = normalize(pages);
+  const pallets = n.rows.reduce((a, r) => a + Number(r.pallets.v ?? 0), 0);
+  const totalPlt = n.totals.total_pallets?.v;
+  if (totalPlt && pallets && pallets !== Number(totalPlt)) {
+    const pg = pages.findLastIndex((p) => p.totals.total_pallets?.v || p.totals.total_pkgs?.v) + 1;
+    out.push({ page: pg, path: "totals.total_pallets", message: `rows add up to ${pallets} pallets, the totals line says ${totalPlt}` });
+  }
+  const marks = marksPos(n.header.shipping_marks?.raw ?? null);
+  if (marks.length) {
+    const rowPos = [...new Set(n.rows.map((r) => r.po.v).filter((x): x is string => !!x))];
+    const mp = n.header.shipping_marks!.page ?? 1;
+    const missing = marks.filter((m) => !rowPos.some((r) => samePo(r, m)));
+    const extra = rowPos.filter((r) => !marks.some((m) => samePo(r, m)));
+    if (missing.length) out.push({ page: mp, path: "header.shipping_marks", message: `PO in the shipping marks but in no row: ${missing.join(", ")}` });
+    if (extra.length) out.push({ page: mp, path: "header.shipping_marks", message: `PO in the rows but not in the shipping marks: ${extra.join(", ")}` });
+  }
+
   pages.forEach((p, i) => {
     p.containers.forEach((c, j) => {
       if (c.number?.v && !isValidContainerNo(c.number.v))

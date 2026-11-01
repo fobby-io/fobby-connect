@@ -5,7 +5,7 @@ Rules:
 - Return the value only, without its printed label ("No.: PL-1" gives "PL-1").
 - Boxes are [x0, y0, x1, y1] integers on a 0-1000 grid of the page, origin at the top left. With text input, use the boxes of the items you read the value from.
 {{variant}}
-- header: one value per key, or null when this page does not print it. A party (shipper, consignee, notify) is its full name and address as printed, lines separated by "\n". "SAME AS CONSIGNEE" for notify means null.
+- header: one value per key, or null when this page does not print it. A party (shipper, consignee, notify) is its full name and address as printed, lines separated by "\n". "SAME AS CONSIGNEE" for notify means null. When no shipper box is printed, the shipper is the company in the letterhead at the top. vessel is the ship name only and voyage the voyage number only, even when printed together. shipping_marks is the whole shipping marks block as printed.
 - containers: one entry per container printed on the page. A container request without numbers, such as "40HQ X 2", is one entry with iso_type "40HQ", qty "2" and null number and seal.
 - columns: the table's columns from left to right, each with its field and its printed header label. Use only the listed fields; leave out columns that match none.
 - rows: every table row in order, with exactly one cell per column (null for an empty cell). t is the row type: item, ditto (a row that repeats the one above, such as "-DO-"), group_header, section_title, subtotal, carried_forward or total. cont is true when the row continues a row from the previous page. g is the row's group code when the row prints one.
