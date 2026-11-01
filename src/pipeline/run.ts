@@ -1,0 +1,110 @@
+import { PDFDocument } from "pdf-lib";
+import type { gateway as makeGateway } from "../gateway/gateway.ts";
+import type { ChatRequest, ContentPart } from "../gateway/meta-client.ts";
+import { extractInstructions, textPageMessage } from "../gateway/prompts.ts";
+import { headerClass } from "../profiles/classify.ts";
+import { resolvePrompt, selectPrompt, type Page, type PromptVersion, type Read, type Store } from "../profiles/loop.ts";
+import { checkDocument, type Finding } from "../rules/checks.ts";
+import type { ModelOutput } from "../shared/model-output.ts";
+import { norm } from "./grounding.ts";
+import { readPdf } from "./pdf.ts";
+import { gridItems, serialize, type GridItem } from "./text-serialize.ts";
+
+// Steps 1-6 of the reading loop for one document: route, classify, select the prompt, read, check, re-read failing pages.
+
+type Gateway = ReturnType<typeof makeGateway>;
+type Effort = ChatRequest["reasoning_effort"];
+export type PageInput = { page_no: number; route: "text" | "vision"; content: ContentPart[]; items: GridItem[] };
+
+// shortcut: a page is text-routed when it has at least 20 text items; the quality score of Stage 0.5 replaces this in M2.
+const MIN_TEXT_ITEMS = 20;
+
+export async function preparePages(bytes: Uint8Array): Promise<PageInput[]> {
+  const parsed = await readPdf(bytes);
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  return Promise.all(parsed.map(async (p) => {
+    const items = gridItems(p);
+    if (items.length >= MIN_TEXT_ITEMS) {
+      return { page_no: p.page_no, route: "text" as const, items, content: [{ type: "text" as const, text: textPageMessage(p.page_no, parsed.length, serialize(items)) }] };
+    }
+    const one = await PDFDocument.create();
+    one.addPage((await one.copyPages(src, [p.page_no - 1]))[0]!);
+    const b64 = Buffer.from(await one.save()).toString("base64");
+    return {
+      page_no: p.page_no, route: "vision" as const, items,
+      content: [
+        { type: "text" as const, text: `Page ${p.page_no} of ${parsed.length}. The page is the attached PDF.` },
+        { type: "file" as const, file: { filename: `page-${p.page_no}.pdf`, file_data: `data:application/pdf;base64,${b64}` } },
+      ],
+    };
+  }));
+}
+
+const instructionsFor = (s: Store, v: PromptVersion | null) => {
+  const r = resolvePrompt(s, v);
+  return extractInstructions({ columns: r.columns, prompt_notes: r.prompt_notes }, r.examples, "compact");
+};
+
+/** Page 1's issuer names a known sender when it contains the sender's name; the clerk can always override. */
+export function matchSender(issuer: string | null, senders: string[]): string | null {
+  if (!issuer) return null;
+  const i = norm(issuer);
+  return senders.find((s) => i.includes(norm(s))) ?? null;
+}
+
+export type RunResult = {
+  cls: string | null; sender: string | null; issuer: string | null; prompt: PromptVersion | null;
+  pages: { page_no: number; route: "text" | "vision"; output: Page; reread: boolean }[];
+  findings: Finding[]; cost_usd: number;
+};
+
+export async function runDocument(g: Gateway, s: Store, pages: PageInput[], o: { doc_id: string; sender?: string | null; effort?: Effort }): Promise<RunResult> {
+  let cost = 0;
+  const read = async (v: PromptVersion | null, p: PageInput, hint?: string) => {
+    const r = await g.extractPage({
+      step_id: `${o.doc_id}:${p.page_no}${hint ? ":reread" : ""}:${v?.id ?? "none"}`, variant: "compact", effort: o.effort ?? "minimal",
+      instructions: instructionsFor(s, v), page: hint ? [...p.content, { type: "text", text: hint }] : p.content,
+    });
+    cost += r.cost_usd;
+    return r.output as ModelOutput<"compact">;
+  };
+
+  // Steps 2-3: the title words give the class on a text page; on a scan, page 1's own doc_type and issuer decide.
+  const top = pages[0]!.items.filter((i) => i.box[1] < 300).map((i) => i.text).join(" ");
+  const first = selectPrompt(s, { sender: o.sender ?? null, cls: headerClass(top || null, null) });
+  let p1 = await read(first, pages[0]!);
+  const cls = headerClass(top || null, p1.doc_type);
+  const sender = o.sender ?? matchSender(p1.issuer, s.senders());
+  const prompt = selectPrompt(s, { sender, cls });
+  if (instructionsFor(s, prompt) !== instructionsFor(s, first)) p1 = await read(prompt, pages[0]!);
+
+  // Step 4.
+  const outputs = [p1, ...(await Promise.all(pages.slice(1).map((p) => read(prompt, p))))];
+  const reread = outputs.map(() => false);
+
+  // Steps 5-6: re-read only pages with findings, once; keep the re-read when it has fewer findings.
+  let findings = checkDocument(outputs);
+  const failing = [...new Set(findings.map((f) => f.page))];
+  await Promise.all(failing.map(async (n) => {
+    const hint = `Checks found problems on this page:\n${findings.filter((f) => f.page === n).map((f) => `- ${f.message}`).join("\n")}\nRead the page again and copy every value exactly as printed.`;
+    const again = await read(prompt, pages[n - 1]!, hint);
+    const trial = outputs.with(n - 1, again);
+    if (checkDocument(trial).filter((f) => f.page === n).length < findings.filter((f) => f.page === n).length) {
+      outputs[n - 1] = again;
+      reread[n - 1] = true;
+    }
+  }));
+  if (failing.length) findings = checkDocument(outputs);
+
+  return {
+    cls, sender, issuer: p1.issuer, prompt,
+    pages: outputs.map((output, i) => ({ page_no: pages[i]!.page_no, route: pages[i]!.route, output, reread: reread[i]! })),
+    findings, cost_usd: cost,
+  };
+}
+
+/** The reader the loop's validation replays with: the same pages, read with a given prompt version. */
+export function replayReader(g: Gateway, s: Store, effort: Effort = "minimal"): Read {
+  return async (v, doc) => Promise.all((doc.pages as ContentPart[][]).map(async (content, i) =>
+    (await g.extractPage({ step_id: `replay:${doc.doc_id}:${i + 1}:${v.id}`, variant: "compact", effort, instructions: instructionsFor(s, v), page: content })).output as Page));
+}

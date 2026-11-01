@@ -25,6 +25,8 @@ export interface Store {
   put(v: PromptVersion): void;
   approved(filter: { sender?: string; cls?: string }): Approved[];
   addApproved(a: Approved): void;
+  /** Sender names that have a profile, for matching page 1's issuer. */
+  senders(): string[];
 }
 
 export function memoryStore(init: { versions?: PromptVersion[]; approved?: Approved[] } = {}): Store & { dump(): { versions: PromptVersion[]; approved: Approved[] } } {
@@ -35,6 +37,7 @@ export function memoryStore(init: { versions?: PromptVersion[]; approved?: Appro
     put: (v) => { const i = versions.findIndex((x) => x.id === v.id); i < 0 ? versions.push(v) : (versions[i] = v); },
     approved: (f) => approved.filter((a) => (!f.sender || a.sender === f.sender) && (!f.cls || a.cls === f.cls)),
     addApproved: (a) => approved.push(a),
+    senders: () => [...new Set(versions.filter((v) => v.level === "sender").map((v) => v.key.split("/")[0]!))],
     dump: () => ({ versions, approved }),
   };
 }
