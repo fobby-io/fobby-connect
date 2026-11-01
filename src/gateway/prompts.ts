@@ -11,6 +11,7 @@ export const PROMPT_TEMPLATE_HASH = createHash("sha256").update(TEMPLATE).digest
 // Generic profile for an unknown sender: no examples or notes, the schema's field descriptions as headers.
 export const FIELD_DESCRIPTIONS: Record<LineField, string> = {
   pkg_range: "package or carton number range of the row, such as 1-12",
+  pallet_range: "pallet number or pallet number range of the row, such as 1-3, when printed in its own column (often headed P/NO. or PLT NO.)",
   marks: "shipping marks",
   description: "goods description",
   part_no: "part, item or model number",

@@ -17,7 +17,7 @@ export type V = { v: string | null; raw: string | null };
 export type NormRow = {
   page: number; row: number; box: number[];
   po: V; part_no: V; revision: V; hs_code: V; lot_no: V; description: V;
-  pkg_from: V; pkg_to: V; pkgs: V; pallets: V; qty_per_pkg: V; qty: V; qty_unit: V; nw_kg: V; gw_kg: V; cbm: V;
+  pkg_from: V; pkg_to: V; pkgs: V; pallet_from: V; pallet_to: V; pallets: V; qty_per_pkg: V; qty: V; qty_unit: V; nw_kg: V; gw_kg: V; cbm: V;
 };
 export type NormDoc = {
   header: Record<string, V & { page: number | null }>;
@@ -97,6 +97,9 @@ export function normalize(pages: Page[]): NormDoc {
       const range = col(r.cells, "pkg_range");
       const rm = range?.match(/(\d+)\s*[-~]\s*(\d+)/) ?? range?.match(/^\s*(\d+)\s*$/m);
       const from = rm?.[1] ?? null, to = rm?.[2] ?? rm?.[1] ?? null;
+      // Pallet numbers are kept, not counted: rows sharing a pallet repeat its number.
+      const pr = col(r.cells, "pallet_range");
+      const pm = pr?.match(/(\d+)\s*[-~]\s*(\d+)/) ?? pr?.match(/(\d+)/);
       const pkgCell = col(r.cells, "pkg_qty");
       const pkgs = (pkgCell && parseNumber(lines(pkgCell)[0]!)) ?? (from && to ? String(Number(to) - Number(from) + 1) : null);
       const plts = [...r.cells.filter(Boolean).join(" ").matchAll(/(\d+)\s*PLTS?\b/gi)].map((x) => Number(x[1]));
@@ -107,6 +110,7 @@ export function normalize(pages: Page[]): NormDoc {
         page: pi + 1, row: ri, box: r.box as number[],
         ...ctx, lot_no: lot ? v(lot, lot) : ctx.lot_no,
         pkg_from: v(from, range), pkg_to: v(to, range), pkgs: v(pkgs, pkgCell ?? range),
+        pallet_from: v(pm?.[1] ?? null, pr), pallet_to: v(pm?.[2] ?? pm?.[1] ?? null, pr),
         pallets: v(plts.length ? String(plts.reduce((a, b) => a + b, 0)) : null, range),
         qty_per_pkg: v(perPkg(qtyCell) ? parseNumber(perPkg(qtyCell)!) : null, qtyCell),
         qty: v(qtyRaw ? parseNumber(qtyRaw) : null, qtyCell), qty_unit: v(unit, qtyCell),

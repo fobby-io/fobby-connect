@@ -41,6 +41,13 @@ describe("normalize", () => {
     expect(n.header.shipper!.v).toBe("ACME CORP."); // from the letterhead when no shipper box is printed
   });
 
+  it("keeps the pallet number range from its own column without counting it as pallets", () => {
+    const p = page({ rows: [["1-108", "108", "BOLT", "237,600", "1,663.20", "1,717.20", "1-3"]] });
+    p.columns.push({ field: "pallet_range", label: "P/NO." });
+    const r = normalize([p]).rows[0]!;
+    expect([r.pallet_from.v, r.pallet_to.v, r.pallets.v]).toEqual(["1", "3", null]);
+  });
+
   it("takes the pallet total printed inside the package total", () => {
     const n = normalize([page({ rows: [ROW1], totals: { total_pkgs: "942 CTNS ( 46 PLTS )" } })]);
     expect([n.totals.total_pkgs!.v, n.totals.total_pallets!.v]).toEqual(["942", "46"]);

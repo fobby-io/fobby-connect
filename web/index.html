@@ -177,7 +177,7 @@ const el = (tag, props = {}, ...kids) => {
 
 // Plain names; the printed label and raw text are shown next to them.
 const FIELD = {
-  pkg_range: "箱號", marks: "嘜頭", description: "品名／說明", part_no: "料號", lot_no: "批號", hs_code: "稅則號",
+  pkg_range: "箱號", pallet_range: "板號", marks: "嘜頭", description: "品名／說明", part_no: "料號", lot_no: "批號", hs_code: "稅則號",
   po_no: "PO 號碼", pkg_qty: "箱數", pkg_unit: "包裝單位", qty: "數量", qty_unit: "數量單位", qty_per_pkg: "每箱數量",
   nw_kg: "淨重", gw_kg: "毛重", nw_per_pkg_kg: "每箱淨重", gw_per_pkg_kg: "每箱毛重", cbm: "材積",
 };
@@ -191,7 +191,7 @@ const SUM_NAME = { pkg_qty: "箱數", qty: "數量", gw_kg: "毛重", nw_kg: "�
 const CHECK_COL = { total_pkgs: "pkgs", total_qty: "qty", total_gw_kg: "gw_kg", total_nw_kg: "nw_kg", total_cbm: "cbm", total_pallets: "pallets", shipping_marks: "po" };
 const DOC_TYPE = { PL: "裝箱單（Packing List）", SO: "託運單（Shipping Order）" };
 const COLS = [
-  ["pkg_range", "箱號"], ["pallets", "板數", "num"], ["pkgs", "箱數", "num"], ["po", "PO 號碼"], ["part_no", "料號"],
+  ["pkg_range", "箱號"], ["pallet_range", "板號"], ["pallets", "板數", "num"], ["pkgs", "箱數", "num"], ["po", "PO 號碼"], ["part_no", "料號"],
   ["description", "品名"], ["qty_per_pkg", "每箱數量", "num"], ["qty", "數量", "num"], ["nw_kg", "淨重 kg", "num"], ["gw_kg", "毛重 kg", "num"],
 ];
 
@@ -361,11 +361,12 @@ function showReview() {
     const tr = el("tr", { className: `item${isOpen ? " on" : ""}${rowChanged(pi, r.row) ? " changed" : ""}`, title: "點一下看原文" },
       el("td", { textContent: r.page }),
       ...COLS.map(([k, , cls]) => {
-        const x = r[k === "pkg_range" ? "pkg_from" : k];
-        let content = fmt(x?.v);
-        if (k === "pkg_range") content = r.pkg_from.v ? (r.pkg_from.v === r.pkg_to.v ? r.pkg_from.v : `${r.pkg_from.v}–${r.pkg_to.v}`) : "";
+        const span = (a, b) => (a.v ? (a.v === b.v ? a.v : `${a.v}–${b.v}`) : "");
+        let content = fmt(r[k]?.v);
+        if (k === "pkg_range") content = span(r.pkg_from, r.pkg_to);
+        if (k === "pallet_range") content = span(r.pallet_from, r.pallet_to);
         if (k === "qty" && r.qty_unit.v) content = `${content} ${r.qty_unit.v}`;
-        const td = el("td", { className: `${cls ?? ""} ${k === "description" ? "desc" : "nowrap"} ${["po", "part_no", "pkg_range"].includes(k) ? "mono" : ""} ${warnCols.has(k) ? "warn" : ""}`, textContent: content });
+        const td = el("td", { className: `${cls ?? ""} ${k === "description" ? "desc" : "nowrap"} ${["po", "part_no", "pkg_range", "pallet_range"].includes(k) ? "mono" : ""} ${warnCols.has(k) ? "warn" : ""}`, textContent: content });
         if (k === "part_no" && r.revision.v) td.append(el("span", { className: "sub", textContent: `版次 ${r.revision.v}` }));
         if (k === "description" && (r.hs_code.v || r.lot_no.v)) td.append(el("span", { className: "sub", textContent: [r.hs_code.v && `稅則 ${r.hs_code.v}`, r.lot_no.v && `批號 ${r.lot_no.v}`].filter(Boolean).join("　") }));
         return td;

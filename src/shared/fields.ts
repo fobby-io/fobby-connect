@@ -16,7 +16,7 @@ export const ROW_TYPES = [
 export type RowType = (typeof ROW_TYPES)[number];
 
 export const LINE_FIELDS = [
-  "pkg_range", "marks", "description", "part_no", "lot_no", "hs_code", "po_no",
+  "pkg_range", "pallet_range", "marks", "description", "part_no", "lot_no", "hs_code", "po_no",
   "pkg_qty", "pkg_unit", "qty", "qty_unit", "qty_per_pkg",
   "nw_kg", "gw_kg", "nw_per_pkg_kg", "gw_per_pkg_kg", "cbm",
 ] as const;
