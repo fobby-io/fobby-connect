@@ -6,18 +6,21 @@
 <title>Fobby Rosetta</title>
 <style>
   :root {
-    --bg: #f4f3ef; --panel: #ffffff; --ink: #1c1c1a; --muted: #6a6964; --line: #dedbd3; --soft: #f8f7f4;
-    --accent: #1d5c87; --accent-ink: #ffffff; --warn: #a34a12; --warn-bg: #fdf1e7; --warn-line: #f1c9a8;
-    --ok: #2b6e39; --ok-bg: #eaf5ed; --edit-bg: #fff4c2;
+    --bg: #eef1f6; --panel: #ffffff; --ink: #0f1b2d; --muted: #5d6880; --line: #dde3ec; --soft: #f5f7fb;
+    --accent: #1f3a68; --accent-ink: #ffffff; --chip: #1f3a68; --chip-ink: #ffffff; --chip-sub: #b9c7e0;
+    --warn: #8a5300; --warn-bg: #fff3d6; --warn-line: #f0cf83;
+    --ok: #1f7a4a; --ok-bg: #e5f4ec; --edit-bg: #fff1b8;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #151514; --panel: #1e1e1c; --ink: #ebeae6; --muted: #a2a19b; --line: #383733; --soft: #252522;
-      --accent: #74b3df; --accent-ink: #0d1b26; --warn: #f2a06a; --warn-bg: #352314; --warn-line: #6b4321;
-      --ok: #85cf94; --ok-bg: #1a2f1f; --edit-bg: #4b4114; }
+    :root { --bg: #0e131b; --panel: #161d28; --ink: #e6ebf3; --muted: #9aa6ba; --line: #2b3546; --soft: #1c2432;
+      --accent: #8fb3ec; --accent-ink: #0b1526; --chip: #2a4a80; --chip-ink: #f1f5fc; --chip-sub: #b7c8e6;
+      --warn: #f2c063; --warn-bg: #33270f; --warn-line: #6d5420;
+      --ok: #7fd3a2; --ok-bg: #14301f; --edit-bg: #4a3f12; }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
-  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  button { font: inherit; cursor: pointer; border-radius: 10px; padding: 8px 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
   button:disabled { opacity: .55; cursor: default; }
   button.link { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; font-size: 13px; }
@@ -25,10 +28,12 @@
 
   header { display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   header h1 { font-size: 17px; margin: 0; }
-  .steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
-  .steps li { padding: 4px 12px; border-radius: 99px; color: var(--muted); font-size: 14px; }
-  .steps li.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
-  .steps li.done { color: var(--ok); }
+  .steps { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; counter-reset: step; }
+  .steps li { display: flex; align-items: center; gap: 8px; padding: 4px 14px 4px 4px; border-radius: 99px; color: var(--muted); font-size: 14px; background: var(--soft); counter-increment: step; }
+  .steps li::before { content: counter(step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line); font-size: 12px; background: var(--panel); }
+  .steps li.on { color: var(--ink); font-weight: 600; }
+  .steps li.on::before { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .steps li.done::before { content: "✓"; background: var(--ok-bg); border-color: transparent; color: var(--ok); }
   header .new { margin-left: auto; }
 
   .wrap { max-width: 1600px; margin: 0 auto; padding: 20px 24px 120px; }
@@ -40,9 +45,36 @@
   .busy { max-width: 640px; margin: 80px auto; text-align: center; color: var(--muted); }
   .busy strong { display: block; color: var(--ink); font-size: 18px; margin-bottom: 6px; }
 
-  .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
-  .summary h2 { margin: 0 0 4px; font-size: 18px; }
+  .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px 24px; margin-bottom: 16px; }
+  .summary .top { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .summary .top > div:first-child { flex: 1 1 320px; }
+  .summary h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -.01em; }
   .summary p { margin: 0; color: var(--muted); }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { background: var(--soft); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; min-width: 110px; }
+  .stat b { display: block; font: 600 22px/1.2 var(--mono); }
+  .stat span { font-size: 12px; color: var(--muted); }
+
+  /* Printed columns (top) wired to standard fields (bottom). */
+  .map { position: relative; }
+  .map svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  .map svg path { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .55; }
+  .map svg path.edited { stroke: var(--warn); opacity: 1; stroke-width: 2; }
+  .map svg circle { fill: var(--panel); stroke: var(--accent); stroke-width: 1.5; }
+  .chips { display: flex; gap: 10px; flex-wrap: wrap; position: relative; }
+  .chips.dst { margin-top: 64px; }
+  .chip { border-radius: 10px; padding: 7px 10px; min-width: 104px; max-width: 200px; font-size: 13px; line-height: 1.35; }
+  .chip strong { display: block; font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip .eg { display: block; font-family: var(--mono); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip.src { background: var(--chip); color: var(--chip-ink); }
+  .chip.src .eg { color: var(--chip-sub); }
+  .chip.src select { margin-top: 4px; width: 100%; font: inherit; font-size: 12px; border-radius: 6px; border: 0; padding: 2px 4px; background: color-mix(in srgb, var(--chip-ink) 14%, transparent); color: var(--chip-ink); }
+  .chip.src select option { color: #0f1b2d; }
+  .chip.src.edited { box-shadow: 0 0 0 2px var(--warn); }
+  .chip.dst { background: var(--soft); border: 1px solid var(--line); }
+  .chip.dst .eg { color: var(--muted); }
+  .chip.dst.warn { background: var(--warn-bg); border-color: var(--warn-line); }
+  .map-foot { margin: 14px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
   .todo { margin-top: 14px; border-radius: 10px; padding: 12px 16px; background: var(--warn-bg); border: 1px solid var(--warn-line); }
   .todo.clear { background: var(--ok-bg); border-color: transparent; color: var(--ok); }
   .todo h3 { margin: 0 0 6px; font-size: 15px; color: var(--warn); }
@@ -52,7 +84,10 @@
 
   .review { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 16px; align-items: start; }
   @media (max-width: 1100px) { .review { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px; margin-bottom: 16px; }
+  .card .sec-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .card .sec-row h3.sec { margin: 0; }
+  .card .sec-row .muted { font-size: 13px; }
   .viewer { position: sticky; top: 12px; }
   .pages { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
   .pages button { padding: 4px 12px; font-size: 14px; }
@@ -81,8 +116,9 @@
   th.num, td.num { text-align: right; }
   th.warn { color: var(--warn); box-shadow: inset 0 -3px 0 var(--warn); }
   td { border-bottom: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }
-  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-  td.warn { background: color-mix(in srgb, var(--warn-bg) 80%, transparent); }
+  td.num { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
+  td.mono { font-family: var(--mono); font-size: 13px; }
+  td.warn { background: var(--warn-bg); box-shadow: inset 0 0 0 1px var(--warn-line); }
   td.desc { min-width: 220px; font-size: 13px; }
   td.nowrap { white-space: nowrap; }
   td .sub { display: block; font-size: 12px; color: var(--muted); }
@@ -266,9 +302,15 @@ function showReview() {
         el("p", { className: "hint", textContent: "標橘色的是相關欄位。點那一列可以看到原文並修改；如果原本就對（例如合計本來就含棧板重量），直接確認即可。" }))
     : el("div", { className: "todo clear", textContent: "自動核對全部通過：加總、板數、嘜頭上的 PO、各頁抬頭都一致。快速看過一遍沒問題就可以確認。" });
 
+  const sum = (k) => norm.rows.reduce((a, r) => a + Number(r[k].v ?? 0), 0);
+  const stat = (n, label) => el("div", { className: "stat" }, el("b", { textContent: fmt(String(Math.round(n * 1000) / 1000)) }), el("span", { textContent: label }));
   const summary = el("section", { className: "summary" },
-    el("h2", { textContent: `${issuer} 的${DOC_TYPE[run.cls] ?? "文件"}` }),
-    el("p", { textContent: `共 ${run.pages.length} 頁，${norm.rows.length} 列明細。${sourceLine()}` }), todo);
+    el("div", { className: "top" },
+      el("div", {},
+        el("h2", { textContent: `${issuer} 的${DOC_TYPE[run.cls] ?? "文件"}` }),
+        el("p", { textContent: `共 ${run.pages.length} 頁。${sourceLine()}` })),
+      el("div", { className: "stats" }, stat(norm.rows.length, "列明細"), stat(sum("pkgs"), "箱"), stat(sum("pallets"), "板"), stat(sum("gw_kg"), "毛重 kg"))),
+    todo);
 
   // Page viewer with the open row outlined.
   const pg = run.pages[current];
@@ -279,9 +321,9 @@ function showReview() {
     Object.assign(b.style, { left: `${x0 / 10}%`, top: `${y0 / 10}%`, width: `${(x1 - x0) / 10}%`, height: `${(y1 - y0) / 10}%` });
     page.append(b);
   }
-  const pageTabs = run.pages.length > 1 ? el("div", { className: "pages" }, ...run.pages.map((p, i) =>
+  const pageTabs = () => run.pages.length > 1 ? el("div", { className: "pages" }, ...run.pages.map((p, i) =>
     el("button", { className: i === current ? "on" : "", textContent: `第 ${p.page_no} 頁`, onclick: () => { current = i; showReview(); } }))) : null;
-  const viewer = el("section", { className: "card viewer" }, pageTabs, page, el("p", { className: "hint", textContent: "點右邊的明細列，原頁會跳到那一頁並框出位置。" }));
+  const viewer = el("section", { className: "card viewer" }, pageTabs(), page, el("p", { className: "hint", textContent: "點右邊的明細列，原頁會跳到那一頁並框出位置。" }));
 
   // Header: normalized value, with the printed text when it differs.
   const headCard = el("section", { className: "card" }, el("h3", { className: "sec", textContent: "文件抬頭" }),
@@ -315,7 +357,7 @@ function showReview() {
         let content = fmt(x?.v);
         if (k === "pkg_range") content = r.pkg_from.v ? (r.pkg_from.v === r.pkg_to.v ? r.pkg_from.v : `${r.pkg_from.v}–${r.pkg_to.v}`) : "";
         if (k === "qty" && r.qty_unit.v) content = `${content} ${r.qty_unit.v}`;
-        const td = el("td", { className: `${cls ?? ""} ${k === "description" ? "desc" : "nowrap"} ${warnCols.has(k) ? "warn" : ""}`, textContent: content });
+        const td = el("td", { className: `${cls ?? ""} ${k === "description" ? "desc" : "nowrap"} ${["po", "part_no", "pkg_range"].includes(k) ? "mono" : ""} ${warnCols.has(k) ? "warn" : ""}`, textContent: content });
         if (k === "part_no" && r.revision.v) td.append(el("span", { className: "sub", textContent: `版次 ${r.revision.v}` }));
         if (k === "description" && (r.hs_code.v || r.lot_no.v)) td.append(el("span", { className: "sub", textContent: [r.hs_code.v && `稅則 ${r.hs_code.v}`, r.lot_no.v && `批號 ${r.lot_no.v}`].filter(Boolean).join("　") }));
         return td;
@@ -347,8 +389,61 @@ function showReview() {
       return box;
     }))) : null;
 
-  $("#app").replaceChildren(summary, el("div", { className: "review" }, viewer, el("div", {}, headCard, rowsCard, totalsCard)));
+  $("#app").replaceChildren(summary, mapCard(warnCols, pageTabs()),el("div", { className: "review" }, viewer, el("div", {}, headCard, rowsCard, totalsCard)));
+  drawWires();
   showBar();
+}
+
+// Which column of the normalized table a model field feeds, for warning colours.
+const FIELD_COL = { pkg_qty: "pkgs", po_no: "po" };
+let drawWires = () => {};
+window.addEventListener("resize", () => drawWires());
+
+// The printed columns of the current page wired to the standard fields they were read as. Rewiring a column re-normalizes.
+function mapCard(warnCols, pageTabs) {
+  const p = answer[current], before = orig(current).columns;
+  const sample = (ci) => (p.rows.find((r) => r.t === "item" && r.cells[ci])?.cells[ci] ?? "").split("\n")[0];
+  const fields = [...new Set(p.columns.map((c) => c.field))];
+  const src = p.columns.map((c, ci) => {
+    const sel = el("select", { "aria-label": `「${c.label.replace(/\n/g, " ")}」這一欄是` }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: `→ ${n}`, selected: f === c.field })));
+    sel.onchange = () => { c.field = sel.value; updateBar(); refresh(); };
+    return el("div", { className: `chip src${c.field !== before[ci]?.field ? " edited" : ""}`, "data-f": c.field },
+      el("strong", { textContent: c.label.replace(/\n/g, " "), title: c.label }), el("span", { className: "eg", textContent: sample(ci) || "—" }), sel);
+  });
+  const dst = fields.map((f) => el("div", { className: `chip dst${warnCols.has(FIELD_COL[f] ?? f) ? " warn" : ""}`, "data-f": f },
+    el("strong", { textContent: FIELD[f] ?? f }),
+    el("span", { className: "eg", textContent: `← ${p.columns.filter((c) => c.field === f).map((c) => c.label.replace(/\n/g, " ")).join("、")}` })));
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("aria-hidden", "true");
+  const map = el("div", { className: "map" }, svg, el("div", { className: "chips src" }, ...src), el("div", { className: "chips dst" }, ...dst));
+
+  drawWires = () => {
+    if (!map.isConnected) return;
+    const o = map.getBoundingClientRect(), ns = "http://www.w3.org/2000/svg";
+    svg.replaceChildren();
+    src.forEach((s) => {
+      const d = dst.find((x) => x.dataset.f === s.dataset.f);
+      if (!d) return;
+      const a = s.getBoundingClientRect(), b = d.getBoundingClientRect();
+      const x1 = a.left + a.width / 2 - o.left, y1 = a.bottom - o.top, x2 = b.left + b.width / 2 - o.left, y2 = b.top - o.top, my = (y1 + y2) / 2;
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`);
+      if (s.classList.contains("edited")) path.classList.add("edited");
+      svg.append(path);
+      for (const [cx, cy] of [[x1, y1], [x2, y2]]) {
+        const c = document.createElementNS(ns, "circle");
+        c.setAttribute("cx", cx); c.setAttribute("cy", cy); c.setAttribute("r", 3.5);
+        svg.append(c);
+      }
+    });
+  };
+
+  return el("section", { className: "card" },
+    el("div", { className: "sec-row" }, el("h3", { className: "sec", textContent: "欄位對應" }),
+      el("span", { className: "muted", textContent: `第 ${current + 1} 頁：上面是文件印的欄位和第一列的內容，下面是系統的標準欄位` })),
+    pageTabs,
+    map,
+    el("p", { className: "map-foot", textContent: `${p.columns.length} 個印出來的欄位，對應到 ${fields.length} 個標準欄位。線連錯了，在上面那一欄的選單改，明細會馬上重算。` }));
 }
 
 // The printed text of one row, cell by cell, with the column mapping; edits re-normalize on leaving the field.
@@ -356,14 +451,12 @@ function rawRow(pi, ri) {
   const p = answer[pi], r = p.rows[ri];
   return el("div", {},
     el("div", { className: "rawgrid" }, ...p.columns.map((c, ci) => {
-      const sel = el("select", { "aria-label": `「${c.label}」這一欄是` }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: n, selected: f === c.field })));
-      sel.onchange = () => { c.field = sel.value; updateBar(); refresh(); };
       const ta = rawEditor(() => r.cells[ci], (x) => { r.cells[ci] = x; }, orig(pi).rows[ri]?.cells[ci] ?? null, refresh);
       ta.setAttribute("aria-label", `${c.label} 原文`);
       return el("div", { className: c.field === "description" || c.field === "marks" ? "wide" : "" },
-        el("label", {}, `原文欄「${c.label.replace(/\n/g, " ")}」→`, sel), ta);
+        el("label", { textContent: `「${c.label.replace(/\n/g, " ")}」→ ${FIELD[c.field] ?? c.field}` }), ta);
     })),
-    el("p", { className: "hint", textContent: "這裡是文件上印的原文。改原文會重新整理成上面的標準格式；欄位對應錯了就改下拉選單。" }));
+    el("p", { className: "hint", textContent: "這裡是文件上印的原文。改原文會重新整理成上面的標準格式；欄位對應錯了，到上方「欄位對應」改。" }));
 }
 
 // ---------- Step 3 ----------
