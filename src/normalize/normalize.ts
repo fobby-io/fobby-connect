@@ -70,6 +70,8 @@ export function normalize(pages: Page[]): NormDoc {
     ves.v = m[1]!.trim();
     if (!header.voyage?.raw) header.voyage = { v: m[2]!.trim(), raw: ves.raw, page: ves.page };
   }
+  // "V.1353-012E", "VOY. 1353-012E" and "1353-012E" are the same voyage.
+  if (header.voyage?.v) header.voyage.v = header.voyage.v.replace(/^V(?:OY(?:AGE)?)?\.?\s*/i, "");
   if (!header.shipper?.raw && pages[0]?.issuer) header.shipper = { v: splitParty(pages[0].issuer).name, raw: pages[0].issuer, page: 1 };
 
   const rows: NormRow[] = [];

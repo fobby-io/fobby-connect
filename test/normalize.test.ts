@@ -37,7 +37,7 @@ describe("normalize", () => {
 
   it("normalizes the header: dates, ports, parties, vessel and voyage printed together", () => {
     const n = normalize([page({ header: { doc_date: "2026/7/1", pol: "KAOHSIUNG", pod: "NEW YORK", vessel: "EVER MERCY V.1366-007E" }, rows: [] })]);
-    expect([n.header.doc_date!.v, n.header.pol!.v, n.header.pod!.v, n.header.vessel!.v, n.header.voyage!.v]).toEqual(["2026-07-01", "TWKHH", "USNYC", "EVER MERCY", "V.1366-007E"]);
+    expect([n.header.doc_date!.v, n.header.pol!.v, n.header.pod!.v, n.header.vessel!.v, n.header.voyage!.v]).toEqual(["2026-07-01", "TWKHH", "USNYC", "EVER MERCY", "1366-007E"]);
     expect(n.header.shipper!.v).toBe("ACME CORP."); // from the letterhead when no shipper box is printed
   });
 
