@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env*
+!.env.example
+!.dev.vars.example
+data/
+eval/out/
+private-samples/
+
+# Review working files: the design in docs/designs/ is the record
+/design_draft.md
+/*_report.md
+/*_report_r2.md
+/concepts_brief.md
+.impeccable/
