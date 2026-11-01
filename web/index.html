@@ -75,6 +75,11 @@
   .chip.dst .eg { color: var(--muted); }
   .chip.dst.warn { background: var(--warn-bg); border-color: var(--warn-line); }
   .map-foot { margin: 14px 0 0; font-size: 13px; color: var(--muted); text-align: center; }
+  .add { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .add summary { cursor: pointer; color: var(--accent); font-size: 14px; font-weight: 600; }
+  .add-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+  .add-form input, .add-form select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); }
+  .add-form input { min-width: 240px; font-family: var(--mono); }
   .todo { margin-top: 14px; border-radius: 10px; padding: 12px 16px; background: var(--warn-bg); border: 1px solid var(--warn-line); }
   .todo.clear { background: var(--ok-bg); border-color: transparent; color: var(--ok); }
   .todo h3 { margin: 0 0 6px; font-size: 15px; color: var(--warn); }
@@ -235,23 +240,26 @@ function start(j) {
 // Edits are made on the raw text; the server normalizes it again and re-runs the checks.
 async function refresh() {
   const r = await fetch("/api/normalize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answer }) });
-  if (!r.ok) return;
   const j = await r.json();
+  if (!r.ok) { $("#count").textContent = `重算失敗：${j.error?.message ?? r.status}`; return; }
   norm = j.normalized; findings = j.findings;
   showReview();
 }
 
 // ---------- Step 2 ----------
 const orig = (pi) => doc.run.pages[pi].output;
+// Columns are matched by printed label, so a column added in review does not shift the ones after it.
+const origCol = (pi, ci) => orig(pi).columns.findIndex((c) => c.label === answer[pi].columns[ci].label);
+const origCell = (pi, ri, ci) => { const oc = origCol(pi, ci); return oc < 0 ? null : orig(pi).rows[ri]?.cells[oc] ?? null; };
+const colChanged = (pi, ci) => { const oc = origCol(pi, ci); return oc < 0 || orig(pi).columns[oc].field !== answer[pi].columns[ci].field; };
 function rowChanged(pi, ri) {
-  return answer[pi].rows[ri].cells.some((v, ci) => (v || null) !== (orig(pi).rows[ri]?.cells[ci] ?? null))
-    || answer[pi].columns.some((c, ci) => c.field !== orig(pi).columns[ci]?.field);
+  return answer[pi].rows[ri].cells.some((v, ci) => (v || null) !== origCell(pi, ri, ci));
 }
 function edits() {
   let n = 0;
   answer.forEach((p, pi) => {
-    p.rows.forEach((r, ri) => r.cells.forEach((v, ci) => { if ((v || null) !== (orig(pi).rows[ri]?.cells[ci] ?? null)) n++; }));
-    p.columns.forEach((c, ci) => { if (c.field !== orig(pi).columns[ci]?.field) n++; });
+    p.rows.forEach((r, ri) => r.cells.forEach((v, ci) => { if ((v || null) !== origCell(pi, ri, ci)) n++; }));
+    p.columns.forEach((c, ci) => { if (colChanged(pi, ci)) n++; });
     for (const part of ["header", "totals"]) Object.entries(p[part]).forEach(([k, v]) => { if ((v?.v || null) !== (orig(pi)[part][k]?.v ?? null)) n++; });
   });
   return n;
@@ -401,13 +409,13 @@ window.addEventListener("resize", () => drawWires());
 
 // The printed columns of the current page wired to the standard fields they were read as. Rewiring a column re-normalizes.
 function mapCard(warnCols, pageTabs) {
-  const p = answer[current], before = orig(current).columns;
+  const p = answer[current];
   const sample = (ci) => (p.rows.find((r) => r.t === "item" && r.cells[ci])?.cells[ci] ?? "").split("\n")[0];
   const fields = [...new Set(p.columns.map((c) => c.field))];
   const src = p.columns.map((c, ci) => {
     const sel = el("select", { "aria-label": `「${c.label.replace(/\n/g, " ")}」這一欄是` }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: `→ ${n}`, selected: f === c.field })));
     sel.onchange = () => { c.field = sel.value; updateBar(); refresh(); };
-    return el("div", { className: `chip src${c.field !== before[ci]?.field ? " edited" : ""}`, "data-f": c.field },
+    return el("div", { className: `chip src${colChanged(current, ci) ? " edited" : ""}`, "data-f": c.field },
       el("strong", { textContent: c.label.replace(/\n/g, " "), title: c.label }), el("span", { className: "eg", textContent: sample(ci) || "—" }), sel);
   });
   const dst = fields.map((f) => el("div", { className: `chip dst${warnCols.has(FIELD_COL[f] ?? f) ? " warn" : ""}`, "data-f": f },
@@ -443,7 +451,33 @@ function mapCard(warnCols, pageTabs) {
       el("span", { className: "muted", textContent: `第 ${current + 1} 頁：上面是文件印的欄位和第一列的內容，下面是系統的標準欄位` })),
     pageTabs,
     map,
-    el("p", { className: "map-foot", textContent: `${p.columns.length} 個印出來的欄位，對應到 ${fields.length} 個標準欄位。線連錯了，在上面那一欄的選單改，明細會馬上重算。` }));
+    el("p", { className: "map-foot", textContent: `${p.columns.length} 個印出來的欄位，對應到 ${fields.length} 個標準欄位。線連錯了，在上面那一欄的選單改，明細會馬上重算。` }),
+    missingColumn());
+}
+
+// A printed column the read left out: the clerk names it, the server re-reads this page with that hint.
+function missingColumn() {
+  const label = el("input", { type: "text", placeholder: "文件上印的欄名，例如 P/NO.", "aria-label": "漏掉的欄位在文件上印的欄名" });
+  const field = el("select", { "aria-label": "這一欄是" }, ...Object.entries(FIELD).map(([f, n]) => el("option", { value: f, textContent: n })));
+  const msg = el("span", { className: "muted", role: "status" });
+  const go = el("button", { className: "primary", textContent: `重讀第 ${current + 1} 頁` });
+  const page = current;
+  go.onclick = async () => {
+    if (!label.value.trim()) return label.focus();
+    go.disabled = true;
+    msg.textContent = "重讀中，約 10–20 秒…";
+    const r = await fetch(`/api/documents/${doc.id}/pages/${page + 1}/columns`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: label.value, field: field.value, page: answer[page] }) });
+    const j = await r.json();
+    if (!r.ok) { go.disabled = false; msg.textContent = j.error.message; return; }
+    answer[page] = j.output;
+    openRow = null;
+    updateBar();
+    refresh();
+  };
+  return el("details", { className: "add" },
+    el("summary", { textContent: "文件上還有一欄沒讀到？" }),
+    el("div", { className: "add-form" }, label, field, go, msg),
+    el("p", { className: "hint", textContent: "系統會帶著這個欄名重讀這一頁，只把新讀到的欄位補進來，其他格子和你改過的內容都不動。確認後，下次這家的文件會記得有這一欄。" }));
 }
 
 // The printed text of one row, cell by cell, with the column mapping; edits re-normalize on leaving the field.
@@ -451,7 +485,7 @@ function rawRow(pi, ri) {
   const p = answer[pi], r = p.rows[ri];
   return el("div", {},
     el("div", { className: "rawgrid" }, ...p.columns.map((c, ci) => {
-      const ta = rawEditor(() => r.cells[ci], (x) => { r.cells[ci] = x; }, orig(pi).rows[ri]?.cells[ci] ?? null, refresh);
+      const ta = rawEditor(() => r.cells[ci], (x) => { r.cells[ci] = x; }, origCell(pi, ri, ci), refresh);
       ta.setAttribute("aria-label", `${c.label} 原文`);
       return el("div", { className: c.field === "description" || c.field === "marks" ? "wide" : "" },
         el("label", { textContent: `「${c.label.replace(/\n/g, " ")}」→ ${FIELD[c.field] ?? c.field}` }), ta);

@@ -3,7 +3,7 @@ import { gateway } from "../src/gateway/gateway.ts";
 import { memoryLedger } from "../src/gateway/ledger.ts";
 import type { ChatRequest, MetaClient } from "../src/gateway/meta-client.ts";
 import { memoryStore, type Page, type PromptVersion } from "../src/profiles/loop.ts";
-import { matchSender, runDocument, type PageInput } from "../src/pipeline/run.ts";
+import { matchSender, mergeColumns, runDocument, type PageInput } from "../src/pipeline/run.ts";
 import { checkDocument } from "../src/rules/checks.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 
@@ -62,5 +62,25 @@ describe("runDocument", () => {
   it("names a sender only when the issuer contains its name", () => {
     expect(matchSender("ACME CORP.\n1 Road", ["ACME", "BOLT"])).toBe("ACME");
     expect(matchSender("OTHER LTD", ["ACME"])).toBe(null);
+  });
+});
+
+describe("mergeColumns", () => {
+  const grid = (cols: string[], rows: string[][]): Page => ({
+    ...page([], null), columns: cols.map((l) => ({ field: l === "C/NO." ? "pkg_range" as const : "qty" as const, label: l })),
+    rows: rows.map((cells) => ({ t: "item" as const, cont: false, g: null, cells, box: [0, 0, 1, 1] })),
+  });
+
+  it("adds only the new column, matched by package range, and keeps the clerk's cells", () => {
+    const cur = grid(["C/NO.", "QTY"], [["1-3", "100 (edited)"], ["4-4", "50"]]);
+    const next = grid(["C/NO.", "PLT", "QTY"], [["4-4", "1 PLT", "5"], ["1-3", "3 PLT", "10"]]);
+    const out = mergeColumns(cur, next)!;
+    expect(out.columns.map((c) => c.label)).toEqual(["C/NO.", "PLT", "QTY"]);
+    expect(out.rows.map((r) => r.cells)).toEqual([["1-3", "3 PLT", "100 (edited)"], ["4-4", "1 PLT", "50"]]);
+  });
+
+  it("gives up when rows cannot be matched", () => {
+    const cur = grid(["C/NO.", "QTY"], [["1-3", "100"], ["4-4", "50"]]);
+    expect(mergeColumns(cur, grid(["C/NO.", "PLT", "QTY"], [["1-3", "3 PLT", "10"]]))).toBeNull();
   });
 });

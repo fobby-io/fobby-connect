@@ -103,6 +103,58 @@ export async function runDocument(g: Gateway, s: Store, pages: PageInput[], o: {
   };
 }
 
+/**
+ * Review step: the clerk points at a printed column the read left out. Re-read that page with the hint and
+ * copy only the new columns into the page as the clerk has it: a whole re-read can misread cells that were right.
+ * Rows are matched by their package range, or by order when both reads have the same number of item rows.
+ * Null when the re-read still misses the column or its rows cannot be matched.
+ */
+export async function readMissingColumn(g: Gateway, s: Store, page: PageInput, o: { doc_id: string; prompt: PromptVersion | null; current: Page; label: string; field: string; effort?: Effort }) {
+  const hint = `The table on this page has a column printed as "${o.label}" (${o.field}) that a previous read left out. Read the page again with every printed column, including that one, and copy every value exactly as printed.`;
+  const r = await g.extractPage({
+    step_id: `${o.doc_id}:${page.page_no}:column:${norm(o.label)}:${o.prompt?.id ?? "none"}`, variant: "compact", effort: o.effort ?? "minimal",
+    instructions: instructionsFor(s, o.prompt), page: [...page.content, { type: "text", text: hint }],
+  });
+  const out = r.output as Page;
+  const want = norm(o.label).replace(/[^A-Z0-9]/g, "");
+  const col = out.columns.find((c) => norm(c.label).replace(/[^A-Z0-9]/g, "").includes(want)) ?? out.columns.find((c) => c.field === o.field);
+  if (!col) return { output: null, cost_usd: r.cost_usd };
+  col.field = o.field as typeof col.field;
+  return { output: mergeColumns(o.current, out), cost_usd: r.cost_usd };
+}
+
+const key = (c: { label: string }) => norm(c.label).replace(/[^A-Z0-9]/g, "");
+
+/** `cur` with the columns only `next` has, placed where `next` prints them; null when rows cannot be matched. */
+export function mergeColumns(cur: Page, next: Page): Page | null {
+  const have = new Set(cur.columns.map(key));
+  const added = next.columns.map((c, i) => ({ c, i })).filter(({ c }) => !have.has(key(c)));
+  if (!added.length) return cur;
+  const range = (p: Page, r: Page["rows"][number]) => {
+    const i = p.columns.findIndex((c) => c.field === "pkg_range");
+    return i < 0 ? null : (r.cells[i] ?? "").replace(/\s/g, "") || null;
+  };
+  const items = (p: Page) => p.rows.filter((r) => r.t === "item" || r.t === "ditto");
+  const byRange = new Map(items(next).map((r) => [range(next, r), r]));
+  const ci = items(cur), ni = items(next);
+  const match = (r: Page["rows"][number], k: number) => (range(cur, r) && byRange.get(range(cur, r))) || (ci.length === ni.length ? ni[k] : undefined);
+  if (ci.some((r, k) => !match(r, k))) return null;
+
+  const out = structuredClone(cur);
+  // Insert each new column before the first old column that follows it in the re-read.
+  for (const { c, i } of added) {
+    const after = next.columns.slice(i + 1).find((x) => have.has(key(x)));
+    const at = after ? out.columns.findIndex((x) => key(x) === key(after)) : out.columns.length;
+    out.columns.splice(at, 0, c);
+    let k = 0;
+    out.rows.forEach((r, ri) => {
+      const isItem = r.t === "item" || r.t === "ditto";
+      r.cells.splice(at, 0, isItem ? match(cur.rows[ri]!, k++)!.cells[i] ?? null : null);
+    });
+  }
+  return out;
+}
+
 /** The reader the loop's validation replays with: the same pages, read with a given prompt version. */
 export function replayReader(g: Gateway, s: Store, effort: Effort = "minimal"): Read {
   return async (v, doc) => Promise.all((doc.pages as ContentPart[][]).map(async (content, i) =>

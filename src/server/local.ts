@@ -10,7 +10,8 @@ import { cachedClient } from "../../eval/cache.ts";
 import { gateway } from "../gateway/gateway.ts";
 import { memoryLedger } from "../gateway/ledger.ts";
 import { metaClient } from "../gateway/meta-client.ts";
-import { preparePages, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
+import { preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
+import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { fileStore } from "../profiles/file-store.ts";
 import { diff, learn, seed, type Page } from "../profiles/loop.ts";
 import { sparkRewrite } from "../profiles/rewrite.ts";
@@ -28,7 +29,12 @@ const store = seed(fileStore(join(DATA, "profiles.json")));
 const WEB = new URL("../../web/", import.meta.url);
 
 type Saved = { id: string; name: string; run: RunResult; pages: PageInput[]; approved?: { sender: string; learn: unknown; corrected: number } };
-const load = (id: string): Saved => JSON.parse(readFileSync(join(RUNS, `${id}.json`), "utf8"));
+const load = (id: string): Saved => {
+  const d: Saved = JSON.parse(readFileSync(join(RUNS, `${id}.json`), "utf8"));
+  // Runs saved before a header key was added lack it; the schema needs every key present.
+  for (const p of d.run.pages) for (const k of HEADER_KEYS) p.output.header[k] ??= null;
+  return d;
+};
 const save = (d: Saved) => writeFileSync(join(RUNS, `${d.id}.json`), JSON.stringify(d));
 
 async function body(req: IncomingMessage): Promise<Buffer> {
@@ -78,6 +84,21 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "POST" && url.pathname === "/api/normalize") {
     const answer = (JSON.parse((await body(req)).toString("utf8")).answer as unknown[]).map((p) => schemas.compact.parse(p));
     return json(res, 200, { normalized: normalize(answer), findings: checkDocument(answer) });
+  }
+  // A printed column the read left out: re-read that one page with the column named.
+  const mc = url.pathname.match(/^\/api\/documents\/([\w-]+)\/pages\/(\d+)\/columns$/);
+  if (mc && req.method === "POST") {
+    const d = load(mc[1]!), page = d.pages[Number(mc[2]) - 1];
+    const b = JSON.parse((await body(req)).toString("utf8")) as { label?: string; field?: string; page?: unknown };
+    const label = (b.label ?? "").trim().slice(0, 60);
+    if (!page || !label || !(LINE_FIELDS as readonly string[]).includes(b.field ?? "")) {
+      return json(res, 400, { error: { code: "bad_column", message: "Name the printed column and pick what it is." } });
+    }
+    // The page as the clerk has it now (with their edits), validated like any answer.
+    const current = schemas.compact.parse(b.page ?? d.run.pages[Number(mc[2]) - 1]!.output);
+    const r = await readMissingColumn(g, store, page, { doc_id: d.id, prompt: d.run.prompt, current, label, field: b.field! });
+    if (!r.output) return json(res, 422, { error: { code: "still_missing", message: `重讀後還是沒有「${label}」這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。` } });
+    return json(res, 200, { output: r.output, cost_usd: r.cost_usd });
   }
   if (m && req.method === "POST" && m[4]) {
     const d = load(m[1]!);
