@@ -132,7 +132,7 @@ export async function erpPl(seed: number, opts: { rows?: number; name?: string }
     },
     profile: {
       columns: COLS.map((c) => ({ field: c.field, label: c.label })),
-      prompt_notes: ["C/NO. is the carton number range of the row.", "Dates are printed like OCT. 30, 2026."],
+      prompt_notes: ["The company in the letterhead at the top is the shipper; MESSRS. is the consignee.", "C/NO. is the carton number range of the row.", "Dates are printed like OCT. 30, 2026."],
     },
   };
   return { pdf: await doc.save(), expected };

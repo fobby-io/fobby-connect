@@ -60,7 +60,9 @@ export function groundHeader(v: string, box: Box, items: GridItem[], o: GroundOp
   if (o.route === "vision") return "no_text";
   const m = GROUNDING.box_margin;
   const region: Box = [box[0] - m, box[1] - m, box[2] + m, box[3] + m];
-  return inRegion(v, items, region, o.route === "hybrid");
+  // A party is printed over several lines: each line must match once; the worst line decides.
+  const states = v.split(/\r?\n/).filter((l) => l.trim()).map((l) => inRegion(l, items, region, o.route === "hybrid"));
+  return (["contradicted", "ambiguous", "matched_untrusted", "matched"] as const).find((s) => states.includes(s)) ?? "contradicted";
 }
 
 export function groundCell(v: string, rowBox: Box, xRange: readonly [number, number] | null, items: GridItem[], o: GroundOpts): GroundState {

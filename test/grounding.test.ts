@@ -54,6 +54,13 @@ describe("grounding", () => {
     expect(groundHeader("1", [50, 40, 160, 50], items, text)).toBe("contradicted");
   });
 
+  it("grounds a multi-line party line by line", () => {
+    const party = [it_("ACME CORP.", 50, 300, 150), it_("1 MAIN ST", 50, 312, 140)];
+    party.forEach((p, k) => (p.id = 100 + k));
+    expect(groundHeader("ACME CORP.\n1 MAIN ST", [50, 300, 150, 322], party, text)).toBe("matched");
+    expect(groundHeader("ACME CORP.\n9 MAIN ST", [50, 300, 150, 322], party, text)).toBe("contradicted");
+  });
+
   it("marks hybrid matches untrusted and vision values as no_text", () => {
     expect(groundHeader("PL2026001", [700, 40, 790, 50], items, { route: "hybrid" })).toBe("matched_untrusted");
     expect(groundHeader("PL2026001", [700, 40, 790, 50], items, { route: "vision" })).toBe("no_text");
