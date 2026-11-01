@@ -42,6 +42,17 @@ export function memoryStore(init: { versions?: PromptVersion[]; approved?: Appro
   };
 }
 
+/** A new store starts with the fallback and one empty class base per document type; corrections fill them. */
+export function seed(s: Store) {
+  const blank = (level: Level, key: string): PromptVersion => ({
+    id: `${level}:${key}:1`, level, key, version: 1, parent: null, status: "active",
+    columns: [], notes: [], examples: [], always_review: [], change: "initial",
+  });
+  if (!s.versions("fallback", "*").length) s.put(blank("fallback", "*"));
+  for (const c of ["PL", "SO"]) if (!s.versions("class", c).length) s.put(blank("class", c));
+  return s;
+}
+
 const active = (s: Store, level: Level, key: string) => s.versions(level, key).find((v) => v.status === "active") ?? null;
 
 /** Step 3: sender profile, else class base, else fallback. */
