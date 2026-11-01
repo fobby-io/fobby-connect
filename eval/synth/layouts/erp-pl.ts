@@ -23,7 +23,7 @@ const COLS = [
 const ROW_H = 16;
 const FIRST_TOP = 262, NEXT_TOP = 82, BOTTOM = 760;
 
-export async function erpPl(seed: number, opts: { rows?: number } = {}) {
+export async function erpPl(seed: number, opts: { rows?: number; name?: string } = {}) {
   const r = rng(seed);
   const shipper = company(r), consignee = company(r);
   const pol = r.pick(PORTS.pol), pod = r.pick(PORTS.pod);
@@ -119,7 +119,7 @@ export async function erpPl(seed: number, opts: { rows?: number } = {}) {
   pages.forEach((p, k) => text(doc.getPage(k), `PAGE ${p.page_no} OF ${pages.length}`, 565, 810, { font: f.regular, size: 8, align: "right" }));
 
   const expected: Expected = {
-    doc_id: `erp-pl-${seed}`, layout: "erp-pl", seed, doc_type: "PL", pages,
+    doc_id: `${opts.name ?? "erp-pl"}-${seed}`, layout: "erp-pl", seed, doc_type: "PL", pages,
     header: {
       doc_no: no, doc_date: docDate, booking_no: booking, shipper: shipper.name, consignee: consignee.name,
       pol: pol[0], pod: pod[0], etd, vessel: v.vessel, voyage: v.voyage,

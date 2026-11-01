@@ -8,7 +8,9 @@ import { erpPl } from "./layouts/erp-pl.ts";
 import type { Expected } from "./types.ts";
 
 export const LAYOUTS: Record<string, (seed: number) => Promise<{ pdf: Uint8Array; expected: Expected }>> = {
-  "erp-pl": erpPl,
+  "erp-pl": (s) => erpPl(s),
+  // 73 rows put 42 on page 2: the dense-page pass criterion is a 40-row page.
+  "erp-pl-dense": (s) => erpPl(s, { rows: 73, name: "erp-pl-dense" }),
   "cjk-so": cjkSo,
 };
 
