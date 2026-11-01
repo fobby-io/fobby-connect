@@ -16,24 +16,25 @@ export const Box = z
   .transform((a) => a.map(clamp) as [number, number, number, number]);
 export type Box = z.output<typeof Box>;
 
-const boxVal = z.object({ v: z.string(), box: Box });
-const idsVal = z.object({ v: z.string(), ids: z.array(z.number().int().min(0)) });
+const boxVal = z.strictObject({ v: z.string(), box: Box });
+const idsVal = z.strictObject({ v: z.string(), ids: z.array(z.number().int().min(0)) });
 
 function keyed<T extends z.ZodType>(keys: readonly string[], val: T) {
-  return z.object(Object.fromEntries(keys.map((k) => [k, val.nullable()])) as Record<string, z.ZodNullable<T>>);
+  return z.strictObject(Object.fromEntries(keys.map((k) => [k, val.nullable()])) as Record<string, z.ZodNullable<T>>);
 }
 
 function build<V extends z.ZodType, C extends z.ZodType>(val: V, cell: C, rowExtra: z.ZodRawShape, withBox: boolean) {
   const rowBox = withBox ? { box: Box } : {};
+  // strictObject: Meta's strict mode needs additionalProperties: false on every object.
   return z
-    .object({
+    .strictObject({
       doc_type: z.enum(["SO", "PL", "other"]).nullable(),
       issuer: z.string().nullable(),
       header: keyed(HEADER_KEYS, val),
       containers: z.array(keyed(["number", "iso_type", "seal", "qty"], val)),
-      columns: z.array(z.object({ field: z.enum(LINE_FIELDS), label: z.string() })),
+      columns: z.array(z.strictObject({ field: z.enum(LINE_FIELDS), label: z.string() })),
       rows: z.array(
-        z.object({
+        z.strictObject({
           t: z.enum(ROW_TYPES),
           cont: z.boolean(),
           g: z.string().nullable(),
@@ -43,9 +44,9 @@ function build<V extends z.ZodType, C extends z.ZodType>(val: V, cell: C, rowExt
         }),
       ),
       groups: z.array(
-        z.object({
+        z.strictObject({
           code: z.string(),
-          pallet_spec: z.array(z.object({ pkgs_per_pallet: z.string(), pallets: z.string() })),
+          pallet_spec: z.array(z.strictObject({ pkgs_per_pallet: z.string(), pallets: z.string() })),
           pallet_ids: z.string().nullable(),
           ...rowBox,
         }),
