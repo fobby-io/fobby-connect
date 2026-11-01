@@ -33,7 +33,10 @@ export type ProfilePrompt = { columns?: { field: LineField; label: string }[]; p
 
 function profilePart(p: ProfilePrompt): string {
   if (!p.columns?.length) {
-    return ["Line-item fields:", ...Object.entries(FIELD_DESCRIPTIONS).map(([f, d]) => `- ${f}: ${d}`)].join("\n");
+    return [
+      "Line-item fields:", ...Object.entries(FIELD_DESCRIPTIONS).map(([f, d]) => `- ${f}: ${d}`),
+      ...(p.prompt_notes?.length ? ["Notes:", ...p.prompt_notes.map((n) => `- ${n}`)] : []),
+    ].join("\n");
   }
   return [
     "This sender's layout. Table columns as printed, and the field each one maps to:",
