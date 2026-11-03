@@ -16,3 +16,8 @@ private-samples/
 /*_report_r2.md
 /concepts_brief.md
 .impeccable/
+# >>> YOUR CTO JEV START >>>
+.cto-brain.json
+.cto-brain.json.*tmp
+debug_stdin.json
+# <<< YOUR CTO JEV END <<<

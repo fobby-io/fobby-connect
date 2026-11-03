@@ -1,0 +1,6 @@
+{
+  "sprint_goal": "11/4 交件：去識別化、部署、demo 影片、提交說明",
+  "test_command": "npx vitest run",
+  "thresholds": {},
+  "flow": true
+}
