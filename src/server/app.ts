@@ -7,7 +7,7 @@ import { CreditExhausted, creditGuard } from "../gateway/credit.ts";
 import { gateway } from "../gateway/gateway.ts";
 import { dbLedger, type ApprovedRef, type Db } from "./db.ts";
 import type { MetaClient } from "../gateway/meta-client.ts";
-import { normalize } from "../normalize/normalize.ts";
+import { applyFixes, normalize, type Fixes, type NormDoc } from "../normalize/normalize.ts";
 import { matchSender, preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
 import { diff, learn, memoryStore, seed, type Approved, type Page, type PromptVersion, type Store } from "../profiles/loop.ts";
 import { museRewrite } from "../profiles/rewrite.ts";
@@ -15,7 +15,7 @@ import { checkDocument } from "../rules/checks.ts";
 import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { schemas } from "../shared/model-output.ts";
 import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts";
-import { exportCsv, exportJson, type Exportable } from "./export.ts";
+import { exportCsv, exportJson, fixesOf, toValues, withValues, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
 /** Files keep documents only: runs/<id>.pdf|json (the PDF and its read result), prompts/<hash>.json (each request sent) and space.json. Data lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
@@ -103,8 +103,21 @@ export function createApp(deps: Deps) {
     await db.putDoc(await space(), { ...listed(d), prompt_version_id: d.run.prompt?.id ?? null, template_hash: d.run.template_hash ?? null, model: d.run.model ?? null });
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
-  // Findings are worked out again, like the normalized values, so the page agrees with the checks as they are now.
-  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, findings: checkDocument(d.run.pages.map((p) => p.output)), prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
+  // Values come from the document's standard record in the database; the read supplies the printed text beside them.
+  // fixes are the stored values a person set that the read does not give, so review starts from them.
+  // Findings are worked out again on those values, so the page agrees with the checks as they are now.
+  const valuesOf = async (d: Saved, pages: Page[]) => {
+    const read = normalize(pages);
+    const stored = await db.getValues(await space(), d.id);
+    return { read, n: withValues(read, stored), fixes: stored ? fixesOf(read, stored) : {} };
+  };
+  const view = async (d: Saved) => {
+    const pages = d.approved?.answer ?? d.run.pages.map((p) => p.output);
+    const { n, fixes } = await valuesOf(d, pages);
+    return { id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, findings: checkDocument(pages, n), prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: n, fixes, approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() };
+  };
+  // What a delivery or download sends: the approved record as stored.
+  const approvedValues = async (d: Saved) => (await valuesOf(d, (d as Exportable).approved.answer)).n;
   const newId = () => crypto.randomUUID().slice(0, 8);
   // Every paid action (a read, a column re-read, a corrected approval) counts against one daily cap for all spaces.
   async function spend(_kind: "read" | "column" | "learn") {
@@ -151,14 +164,18 @@ export function createApp(deps: Deps) {
   // Approving saves the answer as this sender's newest example and learns from any correction (the slow part).
   // The document is claimed first, so of two approvals at once only one learns; a failure releases the claim.
   // Returns null when another request holds the claim.
-  async function approveDoc(d: Saved, sender: string, answer: Page[]) {
+  async function approveDoc(d: Saved, sender: string, answer: Page[], fixes: Fixes = {}) {
+    const { doc: values, bad } = applyFixes(normalize(answer), fixes);
+    if (bad.length) throw fail(400, "bad_value", `Not a valid value: ${bad.join(", ")}`);
     const sp = await space(), approved_at = new Date().toISOString();
     if (!(await db.markApproved(sp, d.id, approved_at))) return null;
     try {
       const model = d.run.pages.map((p) => p.output);
-      const corrected = diff(model, answer).length;
-      // Only a corrected answer makes learning call a model.
-      if (corrected) await spend("learn");
+      const misread = diff(model, answer).length;
+      // Corrected values count as corrections; only corrected printed text teaches the reader, and calls a model.
+      const corrected = misread + Object.keys(fixes).length;
+      if (misread) await spend("learn");
+      await db.putValues(sp, d.id, toValues(values));
       const result = await withStore((s) => learn(s, {
         doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
       }, replayReader(g, s), museRewrite(client)));
@@ -180,7 +197,7 @@ export function createApp(deps: Deps) {
     return (await db.getFlow(sp)) as Flow;
   };
   // One email with the record attached as JSON and CSV. Not retried: the host's mail service queues and retries itself.
-  async function mailTo(d: Saved, to: string, event: string): Promise<Delivery> {
+  async function mailTo(d: Saved, to: string, event: string, n: NormDoc): Promise<Delivery> {
     const x = d as Exportable, t0 = Date.now();
     const base = { id: `dlv_${crypto.randomUUID().slice(0, 12)}`, event, name: "Email", url: `mailto:${to}`, at: new Date().toISOString(), status: null, attempt: 1, next_at: null };
     const what = event === "document.corrected" ? "corrected / 已更正" : "approved / 已確認";
@@ -189,8 +206,8 @@ export function createApp(deps: Deps) {
         to, subject: `${d.name}: ${what}`,
         text: [`${d.name} (${d.approved!.sender}) ${what}, ${d.approved!.approved_at}.`, "The full record is attached as JSON and CSV. 完整資料在附件的 JSON 和 CSV。", "", "Fobby Connect"].join("\n"),
         attachments: [
-          { filename: `${d.id}.json`, type: "application/json", content: JSON.stringify(exportJson(x), null, 2) },
-          { filename: `${d.id}.csv`, type: "text/csv", content: exportCsv(x) },
+          { filename: `${d.id}.json`, type: "application/json", content: JSON.stringify(exportJson(x, n), null, 2) },
+          { filename: `${d.id}.csv`, type: "text/csv", content: exportCsv(x, n) },
         ],
       });
       return { ...base, ok: true, receipt: r.id ?? null, ms: Date.now() - t0 };
@@ -202,9 +219,10 @@ export function createApp(deps: Deps) {
   async function send(d: Saved, flow: Flow) {
     const event = d.deliveries?.length ? "document.corrected" : "document.approved";
     const sender = d.approved!.sender;
+    const n = await approvedValues(d), record = exportJson(d as Exportable, n);
     const out = await Promise.all([
-      ...targets(flow.graph, sender).map((t) => deliver(t, event, exportJson(d as Exportable), flow.secret)),
-      ...(deps.mail ? recipients(flow.graph, sender).map((to) => mailTo(d, to, event)) : []),
+      ...targets(flow.graph, sender).map((t) => deliver(t, event, record, flow.secret)),
+      ...(deps.mail ? recipients(flow.graph, sender).map((to) => mailTo(d, to, event, n)) : []),
     ]);
     d.deliveries = [...out, ...(d.deliveries ?? [])].slice(0, 20);
     await queue(d.id, out);
@@ -230,7 +248,7 @@ export function createApp(deps: Deps) {
       const prev = d?.deliveries?.find((x) => x.id === p.delivery_id);
       // A document reopened since, or a delivery no longer on it, is not sent again.
       if (!d?.approved?.answer || !prev) { await db.dropRetry(sp, p.delivery_id); continue; }
-      const next = await deliver({ name: prev.name, url: prev.url }, prev.event, exportJson(d as Exportable), flow.secret, prev);
+      const next = await deliver({ name: prev.name, url: prev.url }, prev.event, exportJson(d as Exportable, await approvedValues(d)), flow.secret, prev);
       d.deliveries = d.deliveries!.map((x) => (x.id === next.id ? next : x));
       await save(d);
       await queue(d.id, [next]);
@@ -270,6 +288,8 @@ export function createApp(deps: Deps) {
     // Rules run again here so samples read before a rule existed are held to it too.
     d.run.findings = checkDocument(outputs);
     if (d.run.findings.length) reasons.push("findings");
+    // The standard record exists from the read on; approval replaces it with the values a person confirmed.
+    await db.putValues(await space(), d.id, toValues(normalize(outputs)));
     d.auto = { ok: reasons.length === 0, reasons };
     if (d.auto.ok && await approveDoc(d, sender!, outputs)) await autoSend(d);
     await save(d);
@@ -329,12 +349,14 @@ export function createApp(deps: Deps) {
     // A body that is not JSON, or answer pages not in the schema, is the caller's mistake: 400, not 500.
     const bodyJson = async <T>() => { try { return JSON.parse(dec.decode(await body())) as T; } catch (e) { throw e instanceof SyntaxError ? badAnswer() : e; } };
     const pagesOf = (x: unknown) => { const r = z.array(schemas.compact).safeParse(x); if (!r.success) throw badAnswer(); return r.data; };
+    // Corrections from the browser: keys and values bounded; applyFixes checks each is a known field and a valid value.
+    const fixesIn = (x: unknown): Fixes => { if (x == null) return {}; const r = z.record(z.string().max(100), z.string().max(4000).nullable()).safeParse(x); if (!r.success || Object.keys(r.data).length > 5000) throw badAnswer(); return r.data; };
     let m: RegExpMatchArray | null;
 
     if (req.method === "POST" && path === "/api/documents") {
       const bytes = await body();
       const d = await ingest(bytes, url.searchParams.get("name") ?? "", url.searchParams.get("sender") || null);
-      return json(200, view(d));
+      return json(200, await view(d));
     }
     if (req.method === "GET" && path === "/api/documents") return json(200, await docList());
     if (req.method === "GET" && path === "/api/profiles") {
@@ -357,19 +379,21 @@ export function createApp(deps: Deps) {
       if (!pdf) throw fail(404, "not_found", `document ${m[1]}`);
       return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });
     }
-    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, view(await load(m[1]!)));
+    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, await view(await load(m[1]!)));
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/export\.(csv|json)$/))) {
       const d = await load(m[1]!);
       if (!d.approved?.answer || !d.approved.approved_at) throw fail(409, "not_approved", "這份文件還沒核准，核准後才能匯出。");
       const x = d as Exportable;
       return m[2] === "csv"
-        ? download(exportCsv(x), "text/csv", `${d.id}.csv`)
-        : download(JSON.stringify(exportJson(x), null, 2), "application/json", `${d.id}.json`);
+        ? download(exportCsv(x, await approvedValues(d)), "text/csv", `${d.id}.csv`)
+        : download(JSON.stringify(exportJson(x, await approvedValues(d)), null, 2), "application/json", `${d.id}.json`);
     }
     // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.
     if (req.method === "POST" && path === "/api/normalize") {
-      const answer = pagesOf((await bodyJson<{ answer?: unknown }>())?.answer);
-      return json(200, { normalized: normalize(answer), findings: checkDocument(answer) });
+      const b = await bodyJson<{ answer?: unknown; fixes?: unknown }>();
+      const answer = pagesOf(b?.answer);
+      const { doc, bad } = applyFixes(normalize(answer), fixesIn(b?.fixes));
+      return json(200, { normalized: doc, findings: checkDocument(answer, doc), bad });
     }
     // A printed column the read left out: re-read that one page with the column named.
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/pages\/(\d+)\/columns$/))) {
@@ -388,12 +412,12 @@ export function createApp(deps: Deps) {
       const d = await load(m[1]!);
       // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
       if (d.approved) return json(200, { corrected: d.approved.corrected, learn: d.approved.learn, approved_at: d.approved.approved_at, spent: spent() });
-      const b = (await bodyJson<{ sender?: unknown; answer?: unknown }>()) ?? {};
+      const b = (await bodyJson<{ sender?: unknown; answer?: unknown; fixes?: unknown }>()) ?? {};
       const sender = String(b.sender ?? "").trim().toUpperCase();
       if (!sender) throw fail(400, "sender_required", "Name the sender before approving.");
       // The answer comes from the browser: validate it against the same schema the model output passed.
       const answer = pagesOf(b.answer);
-      const a = await approveDoc(d, sender, answer);
+      const a = await approveDoc(d, sender, answer, fixesIn(b.fixes));
       if (!a) {
         // Another request claimed it: its result once saved, else it is still learning.
         const won = (await load(d.id)).approved;
@@ -435,7 +459,7 @@ export function createApp(deps: Deps) {
     // the sender is on hold, so its next documents go to a person until one passes review unchanged.
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/reopen$/))) {
       const d = await load(m[1]!);
-      if (!d.approved) return json(200, view(d));
+      if (!d.approved) return json(200, await view(d));
       const sp = await space();
       await db.markReopened(sp, d.id);
       await db.saveProfiles(sp, { put: [], added: [], removed: [d.id] });
@@ -443,7 +467,7 @@ export function createApp(deps: Deps) {
       d.approved = undefined;
       d.auto = { ok: false, reasons: ["reopened"] };
       await save(d);
-      return json(200, view(d));
+      return json(200, await view(d));
     }
     // Deleting removes the row first, so the document is gone from every screen even if a file is left behind; its
     // example leaves the sender's approved set. Deliveries already sent stay with their receivers.

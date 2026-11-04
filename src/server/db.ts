@@ -1,7 +1,7 @@
 // Data lives here: what is queried, changed and written at once. Files (R2 on a host) keep PDFs, read results, example contents and request bodies.
 // Plain Postgres through Drizzle only (no provider features), so the host can be any Postgres.
 import { and, desc, eq, inArray, isNull, lte, sql, sum } from "drizzle-orm";
-import { boolean, doublePrecision, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, doublePrecision, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { Ledger, LedgerEntry } from "../gateway/ledger.ts";
 import type { Approved, Page, PromptVersion } from "../profiles/loop.ts";
@@ -52,7 +52,30 @@ export const retries = pgTable("retries", {
   space_id: text().notNull(), delivery_id: text().notNull(), doc_id: text().notNull(), due: text().notNull(),
 }, (t) => [primaryKey({ columns: [t.space_id, t.delivery_id] })]);
 
-export type RetryRow = { delivery_id: string; doc_id: string; due: string };
+// The standard record of a document: one column per field, whatever the sender printed or called it. Written after
+// the read (parsed and converted) and again at approval (with a person's corrections); exports read these.
+export const docHeader = pgTable("doc_header", {
+  space_id: text().notNull(), doc_id: text().notNull(),
+  doc_no: text(), doc_date: date({ mode: "string" }), booking_no: text(), shipper: text(), consignee: text(), notify: text(),
+  pol: text(), pod: text(), etd: date({ mode: "string" }), eta: date({ mode: "string" }), vessel: text(), voyage: text(), shipping_marks: text(),
+  total_pkgs: numeric(), total_pallets: numeric(), total_qty: numeric(), total_gw_kg: numeric(), total_nw_kg: numeric(),
+  total_cbm: numeric(), total_gw_with_pallets_kg: numeric(), total_pkgs_in_words: text(),
+}, (t) => [primaryKey({ columns: [t.space_id, t.doc_id] })]);
+
+export const docRows = pgTable("doc_rows", {
+  space_id: text().notNull(), doc_id: text().notNull(), page: integer().notNull(), row: integer().notNull(),
+  po: text(), part_no: text(), revision: text(), hs_code: text(), lot_no: text(), description: text(),
+  pkg_from: integer(), pkg_to: integer(), pkgs: numeric(), pallet_from: integer(), pallet_to: integer(), pallets: numeric(),
+  qty_per_pkg: numeric(), qty: numeric(), qty_unit: text(), nw_kg: numeric(), gw_kg: numeric(), cbm: numeric(),
+}, (t) => [primaryKey({ columns: [t.space_id, t.doc_id, t.page, t.row] })]);
+
+/** Field values only; the printed text each came from stays in the document's read result. */
+export type DocValues = {
+  header: Record<string, string | null>;
+  rows: ({ page: number; row: number } & Record<string, string | number | null>)[];
+};
+
+export type RetryRow ={ delivery_id: string; doc_id: string; due: string };
 
 export type DocRow = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
@@ -87,6 +110,9 @@ export interface Db {
   getFlow(space: string): Promise<unknown | null>;
   /** With onlyIfMissing, a flow another request saved first is kept. */
   putFlow(space: string, flow: unknown, onlyIfMissing?: boolean): Promise<void>;
+  /** Replaces the document's standard record at once. */
+  putValues(space: string, id: string, v: DocValues): Promise<void>;
+  getValues(space: string, id: string): Promise<DocValues | null>;
   queueRetry(space: string, r: RetryRow): Promise<void>;
   dropRetry(space: string, delivery_id: string): Promise<void>;
   dueRetries(space: string, now: string): Promise<RetryRow[]>;
@@ -117,6 +143,8 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
       await db.transaction(async (tx) => {
         await tx.delete(approvedExamples).where(and(eq(approvedExamples.space_id, space), eq(approvedExamples.doc_id, id)));
         await tx.delete(retries).where(and(eq(retries.space_id, space), eq(retries.doc_id, id)));
+        await tx.delete(docRows).where(and(eq(docRows.space_id, space), eq(docRows.doc_id, id)));
+        await tx.delete(docHeader).where(and(eq(docHeader.space_id, space), eq(docHeader.doc_id, id)));
         await tx.delete(documents).where(one(space, id));
       });
     },
@@ -166,6 +194,21 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
     async putFlow(space, flow, onlyIfMissing = false) {
       const q = db.insert(flows).values({ space_id: space, flow });
       await (onlyIfMissing ? q.onConflictDoNothing() : q.onConflictDoUpdate({ target: flows.space_id, set: { flow } }));
+    },
+    async putValues(space, id, v) {
+      await db.transaction(async (tx) => {
+        const head = { ...v.header, space_id: space, doc_id: id } as typeof docHeader.$inferInsert;
+        await tx.insert(docHeader).values(head).onConflictDoUpdate({ target: [docHeader.space_id, docHeader.doc_id], set: head });
+        await tx.delete(docRows).where(and(eq(docRows.space_id, space), eq(docRows.doc_id, id)));
+        if (v.rows.length) await tx.insert(docRows).values(v.rows.map((r) => ({ ...r, space_id: space, doc_id: id }) as typeof docRows.$inferInsert));
+      });
+    },
+    async getValues(space, id) {
+      const [h] = await db.select().from(docHeader).where(and(eq(docHeader.space_id, space), eq(docHeader.doc_id, id)));
+      if (!h) return null;
+      const rows = await db.select().from(docRows).where(and(eq(docRows.space_id, space), eq(docRows.doc_id, id))).orderBy(docRows.page, docRows.row);
+      const { space_id: _, doc_id: __, ...header } = h;
+      return { header, rows: rows.map(({ space_id: _, doc_id: __, ...r }) => r) };
     },
     async queueRetry(space, r) {
       await db.insert(retries).values({ space_id: space, ...r }).onConflictDoUpdate({ target: [retries.space_id, retries.delivery_id], set: { doc_id: r.doc_id, due: r.due } });

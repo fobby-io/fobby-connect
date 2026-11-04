@@ -33,8 +33,14 @@ export function Review({ doc, onApproved }: {
   const answerRef = useRef(answer);
   const [norm, setNorm] = useState<NormDoc>(doc.normalized);
   const [findings, setFindings] = useState<Finding[]>(run.findings);
+  // Values a person typed over what was read, by field key; the server converts and checks them.
+  const [fixes, setFixes] = useState<Record<string, string | null>>(() => doc.fixes ?? {});
+  const fixesRef = useRef(fixes);
+  const [bad, setBad] = useState<string[]>([]);
   const [current, setCurrent] = useState(0);
   const [openRow, setOpenRow] = useState<Row | null>(null);
+  // The row whose value is being edited: its place is marked on the page.
+  const [focusRow, setFocusRow] = useState<Row | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Set<string>>(new Set());
   const [showMap, setShowMap] = useState(false);
@@ -59,24 +65,34 @@ export function Review({ doc, onApproved }: {
   const refresh = async () => {
     const mine = ++seq.current;
     try {
-      const j = await post<{ normalized: NormDoc; findings: Finding[] }>("/api/normalize", { answer: answerRef.current });
+      const j = await post<{ normalized: NormDoc; findings: Finding[]; bad: string[] }>("/api/normalize", { answer: answerRef.current, fixes: fixesRef.current });
       if (mine !== seq.current) return;
       setNorm(j.normalized);
       setFindings(j.findings);
+      setBad(j.bad);
       setRefreshError(null);
     } catch (e) {
       if (mine === seq.current) setRefreshError(t(`重算失敗：${errorMessage(e)}`, `Recalculation failed: ${errorMessage(e)}`));
     }
   };
 
-  const n = edits(orig, answer);
+  const n = edits(orig, answer) + Object.keys(fixes).length;
+  // Typing back the value that was there is not a correction.
+  const setFix = (key: string, value: string | null, was: string) => {
+    const next = { ...fixesRef.current };
+    if ((value ?? "") === was && !(key in next)) return;
+    next[key] = value;
+    fixesRef.current = next;
+    setFixes(next);
+    void refresh();
+  };
 
   async function approve() {
     if (approval) return;
     if (!sender.trim()) return senderInput.current?.focus();
     setApproval({ busy: true });
     try {
-      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current });
+      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current, fixes: fixesRef.current });
       onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected, approved_at: j.approved_at } });
     } catch (e) {
       setApproval({ error: e });
@@ -132,10 +148,16 @@ export function Review({ doc, onApproved }: {
     </div>
   );
 
-  const startEdit = (key: string, f?: (a: Page[]) => void) => { if (f) update(f); setEditing((s) => new Set(s).add(key)); };
-  const doneEdit = (key: string) => { setEditing((s) => { const x = new Set(s); x.delete(key); return x; }); void refresh(); };
+  const startEdit = (key: string) => setEditing((s) => new Set(s).add(key));
+  // x undefined: cancelled (Escape). An empty value clears the field.
+  const doneEdit = (key: string, x: string | undefined, was: string) => {
+    setEditing((s) => { const y = new Set(s); y.delete(key); return y; });
+    if (x !== undefined) setFix(key, x || null, was);
+  };
+  const badNote = (key: string) => bad.includes(key) && <div className="text-xs text-warn">{t("不是有效的值，沒有採用", "Not a valid value; not used")}</div>;
 
-  const openPage = openRow?.page === current ? answer[current]!.rows[openRow.row]?.box as number[] | undefined : undefined;
+  const shownRow = focusRow ?? openRow;
+  const openPage = shownRow?.page === current ? answer[current]!.rows[shownRow.row]?.box as number[] | undefined : undefined;
 
   return (
     <>
@@ -229,17 +251,13 @@ export function Review({ doc, onApproved }: {
             <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-x-5 gap-y-3">
               {Object.entries(L.HEAD).map(([k, name]) => {
                 const nv = norm.header[k];
-                const pi = (nv?.page ?? 1) - 1;
-                const before = orig[pi]!.header[k]?.v ?? null;
-                const now = answer[pi]!.header[k]?.v ?? null;
                 const key = `header.${k}`;
                 return (
                   <Field key={k} name={name} value={nv?.v ?? null} printed={nv?.raw && nv.raw !== nv.v ? nv.raw : null} wide={k === "shipping_marks"}
-                    warn={warnKeys.has(k) || doubtKey.has(k)} changed={(now || null) !== before}
-                    note={doubtKey.has(k) && <div className="text-xs text-warn">{doubtWord(doubtKey.get(k)!)}</div>}
-                    onStart={() => startEdit(key, (a) => { a[pi]!.header[k] ??= { v: "", box: [0, 0, 0, 0] }; })}
-                    editor={editing.has(key) && <RawEditor value={answer[pi]!.header[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)}
-                      onChange={(x) => update((a) => { a[pi]!.header[k]!.v = x ?? ""; })} onDone={() => doneEdit(key)} />} />
+                    warn={warnKeys.has(k) || doubtKey.has(k) || bad.includes(key)} changed={key in fixes}
+                    note={<>{doubtKey.has(k) && <div className="text-xs text-warn">{doubtWord(doubtKey.get(k)!)}</div>}{badNote(key)}</>}
+                    onStart={() => startEdit(key)}
+                    editor={editing.has(key) && <ValueInput initial={nv?.v ?? ""} label={name} multiline={k === "shipping_marks"} onDone={(x) => doneEdit(key, x, nv?.v ?? "")} />} />
                 );
               })}
             </div>
@@ -251,6 +269,7 @@ export function Review({ doc, onApproved }: {
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
+                    <TableHead className="w-7 px-1"><span className="sr-only">{t("原文", "Printed text")}</span></TableHead>
                     {cols.map(([k, name, cls]) => (
                       <TableHead key={k} className={cn("px-2 font-semibold", cls === "num" && "text-right", warnCols.has(k) && "text-warn shadow-[inset_0_-3px_0_var(--warn)]")}>{name}</TableHead>
                     ))}
@@ -262,28 +281,46 @@ export function Review({ doc, onApproved }: {
                     // A page's rows start under a thin divider instead of a Page column on every row.
                     const divider = run.pages.length > 1 && r.page !== norm.rows[i - 1]?.page && (
                       <TableRow key={`p${r.page}`} className="hover:bg-transparent">
-                        <TableCell colSpan={cols.length} className="bg-muted/60 px-2 py-1 text-xs font-semibold text-muted-foreground">{t(`第 ${r.page} 頁`, `Page ${r.page}`)}</TableCell>
+                        <TableCell colSpan={cols.length + 1} className="bg-muted/60 px-2 py-1 text-xs font-semibold text-muted-foreground">{t(`第 ${r.page} 頁`, `Page ${r.page}`)}</TableCell>
                       </TableRow>
                     );
                     const tr = (
-                      <TableRow key={`${pi}-${r.row}`} title={t("點一下看原文", "Click to see the printed text")}
-                        className={cn("cursor-pointer hover:bg-primary/5", isOpen && "bg-primary/10 hover:bg-primary/10", rowChanged(orig, answer, pi, r.row) && "[&>td:first-child]:shadow-[inset_4px_0_0_#d6a800]")}
-                        onClick={() => { setOpenRow(isOpen ? null : { page: pi, row: r.row }); setCurrent(pi); }}>
-                        {cols.map(([k, , cls]) => {
+                      <TableRow key={`${pi}-${r.row}`}
+                        className={cn("hover:bg-primary/5", isOpen && "bg-primary/10 hover:bg-primary/10", rowChanged(orig, answer, pi, r.row) && "[&>td:first-child]:shadow-[inset_4px_0_0_#d6a800]")}>
+                        <TableCell className="px-1 py-1.5 align-top">
+                          <button type="button" aria-expanded={isOpen} title={t("看這一列印的原文", "See this row as printed")}
+                            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                            onClick={() => { setOpenRow(isOpen ? null : { page: pi, row: r.row }); setCurrent(pi); }}>
+                            <svg viewBox="0 0 16 16" className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                            <span className="sr-only">{t("原文", "Printed text")}</span>
+                          </button>
+                        </TableCell>
+                        {cols.map(([k, name, cls]) => {
                           const content = cellText(r, k);
                           const doubt = doubtAt.get(`${pi}:${r.row}:${k}`);
+                          const key = `rows.${r.page}.${r.row}.${k}`;
+                          const was = k === "pkg_range" || k === "pallet_range" ? content : (r as unknown as Record<string, V>)[k]?.v ?? "";
+                          const isBad = bad.includes(key);
                           return (
-                            <TableCell key={k} title={doubt !== undefined ? doubtWord(doubt) : undefined} className={cn("px-2 py-2 align-top",
-                              doubt !== undefined && "bg-warn-bg font-semibold text-warn shadow-[inset_0_0_0_2px_var(--warn-line)]",
-                              cls === "num" && "text-right font-mono text-[13px]",
-                              k === "description" ? "min-w-[160px] text-[13px] whitespace-normal" : "whitespace-nowrap",
-                              ["po", "part_no", "pkg_range", "pallet_range"].includes(k) && "font-mono text-[13px]",
-                              warnCols.has(k) && "bg-warn-bg shadow-[inset_0_0_0_1px_var(--warn-line)]")}>
-                              {content}
-                              {k === "part_no" && r.revision.v && <span className="block text-xs text-muted-foreground">{t(`版次 ${r.revision.v}`, `Rev. ${r.revision.v}`)}</span>}
-                              {k === "description" && (r.hs_code.v || r.lot_no.v) && (
-                                <span className="block text-xs text-muted-foreground">{[r.hs_code.v && t(`稅則 ${r.hs_code.v}`, `HS ${r.hs_code.v}`), r.lot_no.v && t(`批號 ${r.lot_no.v}`, `Lot ${r.lot_no.v}`)].filter(Boolean).join(t("　", "  "))}</span>
-                              )}
+                            <TableCell key={k} title={isBad ? t("不是有效的值，沒有採用", "Not a valid value; not used") : doubt !== undefined ? doubtWord(doubt) : t("點一下修改", "Click to edit")}
+                              className={cn("cursor-text px-2 py-2 align-top hover:bg-muted",
+                                doubt !== undefined && "bg-warn-bg font-semibold text-warn shadow-[inset_0_0_0_2px_var(--warn-line)]",
+                                cls === "num" && "text-right font-mono text-[13px]",
+                                k === "description" ? "min-w-[160px] text-[13px] whitespace-normal" : "whitespace-nowrap",
+                                ["po", "part_no", "pkg_range", "pallet_range"].includes(k) && "font-mono text-[13px]",
+                                warnCols.has(k) && "bg-warn-bg shadow-[inset_0_0_0_1px_var(--warn-line)]",
+                                key in fixes && "bg-edit", isBad && "text-warn shadow-[inset_0_0_0_2px_var(--warn)]")}
+                              onClick={() => { if (!editing.has(key)) { startEdit(key); setCurrent(pi); setFocusRow({ page: pi, row: r.row }); } }}>
+                              {editing.has(key) ? (
+                                <ValueInput initial={was} label={name} align={cls === "num" ? "right" : undefined} multiline={k === "description"}
+                                  onDone={(x) => { setFocusRow(null); doneEdit(key, x, was); }} />
+                              ) : <>
+                                {content || <span className="text-muted-foreground/60">—</span>}
+                                {k === "part_no" && r.revision.v && <span className="block text-xs text-muted-foreground">{t(`版次 ${r.revision.v}`, `Rev. ${r.revision.v}`)}</span>}
+                                {k === "description" && (r.hs_code.v || r.lot_no.v) && (
+                                  <span className="block text-xs text-muted-foreground">{[r.hs_code.v && t(`稅則 ${r.hs_code.v}`, `HS ${r.hs_code.v}`), r.lot_no.v && t(`批號 ${r.lot_no.v}`, `Lot ${r.lot_no.v}`)].filter(Boolean).join(t("　", "  "))}</span>
+                                )}
+                              </>}
                             </TableCell>
                           );
                         })}
@@ -293,7 +330,7 @@ export function Review({ doc, onApproved }: {
                     if (!isOpen) return [...head, tr];
                     return [...head, tr, (
                       <TableRow key={`${pi}-${r.row}-raw`} className="hover:bg-transparent">
-                        <TableCell colSpan={cols.length} className="bg-muted px-3.5 py-3 whitespace-normal">
+                        <TableCell colSpan={cols.length + 1} className="bg-muted px-3.5 py-3 whitespace-normal">
                           <RawRow page={answer[pi]!} ri={r.row} before={(ci) => origCell(orig, answer, pi, r.row, ci)}
                             onChange={(ci, x) => update((a) => { a[pi]!.rows[r.row]!.cells[ci] = x; })} onDone={() => void refresh()} />
                         </TableCell>
@@ -305,9 +342,7 @@ export function Review({ doc, onApproved }: {
             </div>
           </Card>
 
-          <Totals norm={norm} orig={orig} answer={answer} warnKeys={warnKeys} editing={editing}
-            onStart={(key) => startEdit(key)} onDone={doneEdit}
-            onChange={(pi, k, x) => update((a) => { a[pi]!.totals[k]!.v = x ?? ""; })} />
+          <Totals norm={norm} warnKeys={warnKeys} fixes={fixes} editing={editing} onStart={startEdit} onDone={doneEdit} badNote={badNote} bad={bad} />
         </div>
       </div>
 
@@ -320,30 +355,29 @@ export function Review({ doc, onApproved }: {
   );
 }
 
-// Totals: normalized, editable on the page that prints them.
-function Totals({ norm, orig, answer, warnKeys, editing, onStart, onDone, onChange }: {
-  norm: NormDoc; orig: Page[]; answer: Page[]; warnKeys: Set<string>; editing: Set<string>;
-  onStart: (key: string) => void; onDone: (key: string) => void; onChange: (pi: number, k: string, x: string | null) => void;
+// Totals: the values the sums are checked against, edited like any other value.
+function Totals({ norm, warnKeys, fixes, bad, editing, onStart, onDone, badNote }: {
+  norm: NormDoc; warnKeys: Set<string>; fixes: Record<string, string | null>; bad: string[]; editing: Set<string>;
+  onStart: (key: string) => void; onDone: (key: string, x: string | undefined, was: string) => void; badNote: (key: string) => ReactNode;
 }) {
   useLang();
   const L = labels();
-  const totals = Object.entries(L.TOTAL).filter(([k]) => norm.totals[k]?.raw);
+  // Totals the document prints, plus any a person filled in.
+  const totals = Object.entries(L.TOTAL).filter(([k]) => norm.totals[k]?.raw || `totals.${k}` in fixes);
   if (!totals.length) return null;
   return (
     <Card className={SECTION}>
       <h2 className="mb-3 text-base font-bold">{t("合計", "Totals")}</h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-x-5 gap-y-3">
         {totals.map(([k, name]) => {
-          const nv = norm.totals[k]!;
-          const pi = answer.map((p) => !!p.totals[k]?.v).lastIndexOf(true);
-          const before = pi < 0 ? null : orig[pi]!.totals[k]?.v ?? null;
+          const nv = norm.totals[k] ?? { v: null, raw: null };
           const unit = k.endsWith("_kg") ? " kg" : "";
           const key = `totals.${k}`;
           return (
             <Field key={k} name={name} value={nv.v ? `${fmt(nv.v)}${unit}` : null} printed={nv.raw !== nv.v ? nv.raw : null}
-              warn={warnKeys.has(k)} changed={pi >= 0 && answer[pi]!.totals[k]?.v !== before}
-              onStart={pi >= 0 ? () => onStart(key) : undefined}
-              editor={pi >= 0 && editing.has(key) && <RawEditor value={answer[pi]!.totals[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)} onChange={(x) => onChange(pi, k, x)} onDone={() => onDone(key)} />} />
+              warn={warnKeys.has(k) || bad.includes(key)} changed={key in fixes} note={badNote(key)}
+              onStart={() => onStart(key)}
+              editor={editing.has(key) && <ValueInput initial={nv.v ?? ""} label={name} align={k === "total_pkgs_in_words" ? undefined : "right"} onDone={(x) => onDone(key, x, nv.v ?? "")} />} />
           );
         })}
       </div>
@@ -360,7 +394,27 @@ function Status({ tone, children }: { tone: "ok" | "warn" | "neutral"; children:
   );
 }
 
-// One header or total value. The value itself is the control: clicking it opens its printed text for editing.
+// Edits one value in place. Enter or leaving keeps it; Escape drops it (onDone gets undefined).
+function ValueInput({ initial, label, align, multiline, onDone }: {
+  initial: string; label: string; align?: "right"; multiline?: boolean; onDone: (x: string | undefined) => void;
+}) {
+  const [x, setX] = useState(initial);
+  const done = useRef(false);
+  const finish = (v: string | undefined) => { if (!done.current) { done.current = true; onDone(v?.trim()); } };
+  const props = {
+    autoFocus: true, "aria-label": label, value: x,
+    onChange: (e: { target: { value: string } }) => setX(e.target.value),
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") finish(undefined);
+      if (e.key === "Enter" && !(multiline && e.shiftKey)) { e.preventDefault(); finish(x); }
+    },
+    onBlur: () => finish(x),
+    className: cn("block w-full min-w-[4.5rem] rounded-md border border-ring bg-card px-1.5 py-1 text-sm text-foreground outline-none", align === "right" && "text-right font-mono"),
+  };
+  return multiline ? <textarea rows={Math.min(5, x.split("\n").length + 1)} {...props} /> : <input {...props} />;
+}
+
+// One header or total value. The value itself is the control: clicking it edits the value.
 function Field({ name, value, printed, warn, changed, note, wide, onStart, editor }: {
   name: string; value: string | null; printed: string | null; warn: boolean; changed: boolean;
   note?: ReactNode; wide?: boolean; onStart?: () => void; editor: ReactNode;

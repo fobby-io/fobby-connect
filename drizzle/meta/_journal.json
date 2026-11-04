@@ -22,6 +22,13 @@
       "when": 1793811622916,
       "tag": "0002_examples_without_files",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793814448795,
+      "tag": "0003_standard_record",
+      "breakpoints": true
     }
   ]
 }

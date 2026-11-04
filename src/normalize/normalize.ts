@@ -6,6 +6,7 @@ import { parseDate } from "../transforms/steps/date-parse.ts";
 import { parseNumber } from "../transforms/steps/parse-number.ts";
 import { splitParty } from "../transforms/steps/split.ts";
 import { toBase, unitIn } from "../transforms/units.ts";
+import { HEADER_KEYS, TOTALS_KEYS } from "../shared/fields.ts";
 
 // Stage 2, generic steps: printed text -> typed values. The model only copies; every computation is here.
 // Every value keeps the raw text it came from, so review can show both and a correction can tell
@@ -43,7 +44,8 @@ function weight(cell: string | null | undefined, label: string): V {
   const n = raw ? parseNumber(raw) : null;
   if (n === null) return v(null, cell);
   // LBR is the UN/ECE code for pound, printed by some ERPs.
-  const u = unitIn(`${raw} ${label}`.replace(/\bLBR\b/gi, "LBS"));
+  // "G.W." and "N.W." name the weight, not a unit: the G is not grams.
+  const u = unitIn(`${raw} ${label.replace(/\b[GN]\s*\.?\s*\/?\s*W\b\.?/gi, "")}`.replace(/\bLBR\b/gi, "LBS"));
   if (!u || ["KG", "KGS", "KGM"].includes(u.unit)) return v(n, cell);
   const kg = toBase(n, u.unit);
   return v(kg && new Decimal(kg).toDecimalPlaces(3).toString(), cell);
@@ -148,3 +150,54 @@ export function marksPos(marks: string | null): string[] {
 }
 
 export const samePo = (a: string, b: string) => norm(a).replace(/[^A-Z0-9]/g, "") === norm(b).replace(/[^A-Z0-9]/g, "");
+
+/**
+ * A person's corrections to normalized values, keyed "header.<k>", "totals.<k>" or "rows.<page>.<row>.<field>"
+ * (page 1-based; field pkg_range or pallet_range sets both ends from "1-108"). null clears a value.
+ */
+export type Fixes = Record<string, string | null>;
+
+const NUM_ROW = new Set(["pkgs", "pallets", "qty_per_pkg", "qty", "nw_kg", "gw_kg", "cbm"]);
+const TEXT_ROW = new Set(["po", "part_no", "revision", "hs_code", "lot_no", "description", "qty_unit"]);
+const DATE_HEAD = new Set(["doc_date", "etd", "eta"]);
+
+/** The value a typed correction stands for, or undefined when it cannot be one ("12 boxes" for a number). */
+function typed(field: string, input: string | null): string | null | undefined {
+  const s = input?.trim() ?? "";
+  if (!s) return null;
+  if (NUM_ROW.has(field) || (field.startsWith("total_") && field !== "total_pkgs_in_words")) return parseNumber(s) ?? undefined;
+  if (DATE_HEAD.has(field)) return parseDate(s) ?? undefined;
+  if (field === "pol" || field === "pod") return lookupPort(s) ?? s.toUpperCase();
+  return s;
+}
+
+/** Applies corrections on top of the values read from the page. bad lists the keys that are not a valid value. */
+export function applyFixes(n: NormDoc, fixes: Fixes): { doc: NormDoc; bad: string[] } {
+  const doc = structuredClone(n), bad: string[] = [];
+  for (const [key, input] of Object.entries(fixes)) {
+    const [part, ...rest] = key.split(".");
+    if (part === "header" || part === "totals") {
+      const k = rest.join("."), keys: readonly string[] = part === "header" ? HEADER_KEYS : TOTALS_KEYS;
+      const val = keys.includes(k) ? typed(k, input) : undefined;
+      if (val === undefined) { bad.push(key); continue; }
+      if (part === "header") doc.header[k] = { ...(doc.header[k] ?? { raw: null, page: null }), v: val };
+      else doc.totals[k] = { ...(doc.totals[k] ?? { raw: null }), v: val };
+      continue;
+    }
+    const [page, row, field] = rest;
+    const r = part === "rows" ? doc.rows.find((x) => x.page === Number(page) && x.row === Number(row)) : undefined;
+    if (!r || !field) { bad.push(key); continue; }
+    if (field === "pkg_range" || field === "pallet_range") {
+      const m = (input ?? "").match(/^\s*(\d+)\s*(?:[-~–]\s*(\d+))?\s*$/);
+      if (input?.trim() && !m) { bad.push(key); continue; }
+      const [from, to] = field === "pkg_range" ? ["pkg_from", "pkg_to"] as const : ["pallet_from", "pallet_to"] as const;
+      r[from] = { ...r[from], v: m?.[1] ?? null };
+      r[to] = { ...r[to], v: m?.[2] ?? m?.[1] ?? null };
+      continue;
+    }
+    const val = NUM_ROW.has(field) || TEXT_ROW.has(field) ? typed(field, input) : undefined;
+    if (val === undefined) { bad.push(key); continue; }
+    (r as unknown as Record<string, V>)[field] = { ...(r as unknown as Record<string, V>)[field]!, v: val };
+  }
+  return { doc, bad };
+}

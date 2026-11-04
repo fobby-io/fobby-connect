@@ -59,6 +59,13 @@ describe("normalize", () => {
     expect(checkDocument(pages).filter((f) => /pkg_qty|pallets/.test(f.message))).toEqual([]);
   });
 
+  it("reads a weight under G.W. or N.W. without a unit as kg, not grams", () => {
+    const p = page({ rows: [["1-1", "1", "BOLT", "10", "705.00", "667.40"]] });
+    p.columns[4]!.label = "N.W."; p.columns[5]!.label = "G.W.";
+    const r = normalize([p]).rows[0]!;
+    expect([r.nw_kg.v, r.gw_kg.v]).toEqual(["705", "667.4"]);
+  });
+
   it("takes the pallet total printed inside the package total", () => {
     const n = normalize([page({ rows: [ROW1], totals: { total_pkgs: "942 CTNS ( 46 PLTS )" } })]);
     expect([n.totals.total_pkgs!.v, n.totals.total_pallets!.v]).toEqual(["942", "46"]);

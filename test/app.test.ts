@@ -23,9 +23,9 @@ const shared = pgliteDb();
 function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>, dailyReads?: number) {
   const store = new Map<string, Uint8Array>();
   // One PGlite per file; each setup is its own space in it, as each team is.
-  const own = new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() }));
+  const space = crypto.randomUUID(), own = new TextEncoder().encode(JSON.stringify({ id: space }));
   const files = { get: async (k: string) => (k === "space.json" ? own : store.get(k) ?? null), put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  return { store, app: createApp({ files, db: lazyDb(shared), client, mail, dailyReads }) };
+  return { store, space, app: createApp({ files, db: lazyDb(shared), client, mail, dailyReads }) };
 }
 const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
@@ -85,6 +85,34 @@ describe("createApp", () => {
     const twice = await (await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "other", answer: [PAGE] }))).json();
     expect(twice.approved_at).toBe(ok.approved_at);
     expect((await (await call(app, `/api/documents/${doc.id}/export.json`)).json()).sender).toBe("ACME");
+  });
+
+  it("keeps a standard record per document: read values first, then the values a person corrected, which exports send", async () => {
+    const { app, space } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    const db = await shared;
+    expect((await db.getValues(space, doc.id))?.rows).toEqual([expect.objectContaining({ page: 1, row: 0, pkgs: "50", pallets: null })]);
+
+    // A corrected value is converted and checked against the totals; a value that is not one is listed, not stored.
+    const fixes = { "rows.1.0.pkgs": "48", "rows.1.0.pallets": "2", "header.doc_date": "JUN. 16, 2026", "header.pol": "Kaohsiung" };
+    const n = await (await call(app, "/api/normalize", post({ answer: [PAGE], fixes: { ...fixes, "rows.1.0.qty": "a dozen" } }))).json();
+    expect([n.normalized.rows[0].pkgs.v, n.normalized.rows[0].pallets.v, n.normalized.header.doc_date.v, n.normalized.header.pol.v]).toEqual(["48", "2", "2026-06-16", "TWKHH"]);
+    expect(n.bad).toEqual(["rows.1.0.qty"]);
+    expect(n.findings.map((f: { message: string }) => f.message)).toContain("rows add up to 48 pkg_qty, the totals line says 50");
+    expect((await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE], fixes: { "rows.1.0.qty": "a dozen" } }))).status).toBe(400);
+
+    const ok = await (await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE], fixes }))).json();
+    expect(ok.corrected).toBe(4);
+    const body = await (await call(app, `/api/documents/${doc.id}/export.json`)).json();
+    expect([body.rows[0].pkgs.v, body.rows[0].pallets.v, body.header.pol.v]).toEqual(["48", "2", "TWKHH"]);
+    expect(body.rows[0].pkgs.raw).toBe("50"); // the printed text stays beside the corrected value
+    // Opened again, the page shows the stored values and starts from the same corrections.
+    const v = await (await call(app, `/api/documents/${doc.id}`)).json();
+    expect(v.normalized.rows[0].pallets.v).toBe("2");
+    expect(v.fixes).toEqual({ "rows.1.0.pkgs": "48", "rows.1.0.pallets": "2", "header.doc_date": "2026-06-16", "header.pol": "TWKHH" });
+
+    await call(app, `/api/documents/${doc.id}`, { method: "DELETE" });
+    expect(await db.getValues(space, doc.id)).toBeNull();
   });
 
   it("refuses to export a document approved before export existed", async () => {

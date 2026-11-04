@@ -16,37 +16,35 @@ const rowValue = (cell: string | null | undefined) => {
   return lines.length ? parseNumber(lines.at(-1)!) : null;
 };
 
-const SUMS = [["pkg_qty", "total_pkgs"], ["qty", "total_qty"], ["gw_kg", "total_gw_kg"], ["nw_kg", "total_nw_kg"], ["cbm", "total_cbm"]] as const;
+// The printed text while it still says the value; a converted or corrected value in kg.
+const asRead = (x: { v: string | null; raw: string | null }) => (x.raw && rowValue(x.raw) === x.v ? x.raw : `${x.v} kg`);
+
+const SUMS =[["pkg_qty", "total_pkgs"], ["qty", "total_qty"], ["gw_kg", "total_gw_kg"], ["nw_kg", "total_nw_kg"], ["cbm", "total_cbm"]] as const;
 
 /** Row sums against the printed totals line, across all pages; container numbers by ISO 6346 check digit. */
-export function checkDocument(pages: Page[]): Finding[] {
+/** n is the normalized document the checks hold to: the read as is, or with a person's corrections applied. */
+export function checkDocument(pages: Page[], n = normalize(pages)): Finding[] {
   const out: Finding[] = [];
-  const n = normalize(pages);
   for (const [field, total] of SUMS) {
-    const printed = pages.map((p, i) => ({ i, v: p.totals[total]?.v })).find((t) => t.v);
-    if (!printed) continue;
-    const want = parseNumber(printed.v!);
-    if (want === null) continue;
+    // Sums use the values as the table shows them (kg after unit conversion, corrections applied), never a cell's raw text.
+    const want = n.totals[total]?.v;
+    if (!want) continue;
+    const printedAt = pages.findLastIndex((p) => p.totals[total]?.v);
+    const raw = n.totals[total]!.raw;
+    const shown = raw && parseNumber(raw) === want ? raw : `${want}${field.endsWith("_kg") ? " kg" : ""}`;
+    const key = field === "pkg_qty" ? "pkgs" : field;
     let sum = new Decimal(0), seen = false;
     const pagesWithRows: number[] = [];
-    // Cartons come from the rows as the table shows them: a cell like "244 CTNS\n36CTN/6PLT" has its count on the first line.
-    if (field === "pkg_qty") for (const r of n.rows) if (r.pkgs.v && pages[r.page - 1]!.columns.some((c) => c.field === "pkg_qty")) {
-      sum = sum.plus(r.pkgs.v); seen = true; if (!pagesWithRows.includes(r.page - 1)) pagesWithRows.push(r.page - 1);
+    for (const r of n.rows) {
+      const v = (r as unknown as Record<string, { v: string | null }>)[key]!.v;
+      if (!v || !pages[r.page - 1]?.columns.some((c) => c.field === field)) continue;
+      sum = sum.plus(v); seen = true; if (!pagesWithRows.includes(r.page - 1)) pagesWithRows.push(r.page - 1);
     }
-    if (field !== "pkg_qty") pages.forEach((p, i) => {
-      const c = p.columns.findIndex((col) => col.field === field);
-      if (c < 0) return;
-      for (const r of p.rows) {
-        if (r.t !== "item" && r.t !== "ditto") continue;
-        const v = rowValue(r.cells[c]);
-        if (v !== null) { sum = sum.plus(v); seen = true; if (!pagesWithRows.includes(i)) pagesWithRows.push(i); }
-      }
-    });
     // Weights and volumes are printed rounded per row; allow 0.5% before calling it a mismatch.
     const tol = field === "pkg_qty" || field === "qty" ? new Decimal(0) : new Decimal(want).abs().mul(0.005);
     if (seen && sum.minus(want).abs().gt(tol)) {
-      for (const i of new Set([printed.i, ...pagesWithRows]))
-        out.push({ page: i + 1, path: `totals.${total}`, message: `rows add up to ${sum.toString()} ${field}, the totals line says ${printed.v}` });
+      for (const i of new Set([...(printedAt < 0 ? [] : [printedAt]), ...pagesWithRows]))
+        out.push({ page: i + 1, path: `totals.${total}`, message: `rows add up to ${sum.toString()} ${field}, the totals line says ${shown}` });
     }
   }
   // Every page repeats the same header; a value that differs between pages was misread on one of them.
@@ -64,7 +62,7 @@ export function checkDocument(pages: Page[]): Finding[] {
     const pg = pages.findLastIndex((p) => p.totals.total_pallets?.v || p.totals.total_pkgs?.v) + 1;
     out.push({ page: pg, path: "totals.total_pallets", message: `rows add up to ${pallets} pallets, the totals line says ${totalPlt}` });
   }
-  const marks = marksPos(n.header.shipping_marks?.raw ?? null);
+  const marks = marksPos(n.header.shipping_marks?.v ?? null);
   if (marks.length) {
     const rowPos = [...new Set(n.rows.map((r) => r.po.v).filter((x): x is string => !!x))];
     const mp = n.header.shipping_marks!.page ?? 1;
@@ -75,16 +73,10 @@ export function checkDocument(pages: Page[]): Finding[] {
   }
 
   // Both weights can be read and still sit in each other's column; gross under net means they are swapped or misread.
-  pages.forEach((p, i) => {
-    const nw = p.columns.findIndex((c) => c.field === "nw_kg"), gw = p.columns.findIndex((c) => c.field === "gw_kg");
-    if (nw < 0 || gw < 0) return;
-    p.rows.forEach((r, ri) => {
-      if (r.t !== "item" && r.t !== "ditto") return;
-      const n = rowValue(r.cells[nw]), g = rowValue(r.cells[gw]);
-      if (n !== null && g !== null && new Decimal(g).lt(n))
-        out.push({ page: i + 1, path: `rows[${ri}].gw_kg`, message: `row ${ri + 1} gross weight ${r.cells[gw]} is less than its net weight ${r.cells[nw]}` });
-    });
-  });
+  for (const r of n.rows) {
+    if (r.nw_kg.v && r.gw_kg.v && new Decimal(r.gw_kg.v).lt(r.nw_kg.v))
+      out.push({ page: r.page, path: `rows[${r.row}].gw_kg`, message: `row ${r.row + 1} gross weight ${asRead(r.gw_kg)} is less than its net weight ${asRead(r.nw_kg)}` });
+  }
 
   pages.forEach((p, i) => {
     p.containers.forEach((c, j) => {

@@ -18,7 +18,7 @@ export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged
 export const PASS = 0.75, WRONG = 0.5;
 // The `view` the server returns for a document.
 export type Doc = {
-  id: string; name: string; normalized: NormDoc; approved: Approved | null; created_at: string | null;
+  id: string; name: string; normalized: NormDoc; fixes?: Record<string, string | null>; approved: Approved | null; created_at: string | null;
   verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null; deliveries: Delivery[];
   source?: { via: "email"; from: string; subject: string } | null;
   run: {
