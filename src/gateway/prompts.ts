@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import type { LineField } from "../shared/fields.ts";
 import type { Variant } from "../shared/model-output.ts";
-
-const TEMPLATE = readFileSync(new URL("./prompts/extract-page.v1.md", import.meta.url), "utf8");
+import { TEMPLATE } from "./prompts/extract-page.v1.ts";
 
 /** Hash of the unfilled template; part of the cache key. */
 export const PROMPT_TEMPLATE_HASH = createHash("sha256").update(TEMPLATE).digest("hex").slice(0, 16);
