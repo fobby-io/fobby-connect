@@ -1,6 +1,6 @@
 // Local review server: the review API from app.ts on Node, with files under data/ and the disk cache in front of Meta.
 // Run: npx tsx src/server/local.ts   (http://localhost:8787)
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -26,6 +26,8 @@ const fileOf = (key: string) => key.startsWith("samples/") ? join(SAMPLES, key.s
 const files: Files = {
   get: async (key) => existsSync(fileOf(key)) ? new Uint8Array(readFileSync(fileOf(key))) : null,
   put: async (key, bytes) => { mkdirSync(dirname(fileOf(key)), { recursive: true }); writeFileSync(fileOf(key), bytes); },
+  // Prefixes here are directories ("<space>/index/"), so one level is enough.
+  list: async (prefix) => existsSync(fileOf(prefix)) ? readdirSync(fileOf(prefix)).map((n) => prefix + n) : [],
 };
 const decide = process.env.OPENROUTER_API_KEY ? jevClient(process.env.OPENROUTER_API_KEY) : undefined;
 if (!decide) console.warn("OPENROUTER_API_KEY is not set: nothing is verified, every document goes to review");

@@ -44,14 +44,14 @@ const noMeta: MetaClient = async () => { throw new Error("no model call expected
 function setup(decide?: Decide) {
   const store = new Map<string, Uint8Array>();
   const enc = new TextEncoder();
-  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b) };
+  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)) };
   const app = createApp({ files, client: noMeta, decide });
   const put = (s: unknown) => { store.set("samples/s1.json", enc.encode(JSON.stringify(s))); store.set("samples/s1.pdf", new Uint8Array([37, 80, 68, 70])); };
   put(sample());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const call = async (path: string, init?: RequestInit): Promise<any> => (await app.fetch(new Request(`http://x${path}`, init))).json();
   const post = (path: string, body?: unknown) => call(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-  return { put, call, open: () => post("/api/samples/s1/open"), approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
+  return { store, put, call, open: () => post("/api/samples/s1/open"), approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
 }
 
 describe("second system and automatic approval", () => {
@@ -73,6 +73,15 @@ describe("second system and automatic approval", () => {
     expect(second.approved.corrected).toBe(0);
     const list = await t.call("/api/documents");
     expect(list.map((d: { status: string }) => d.status)).toEqual(["auto", "approved"]);
+  });
+
+  it("keeps every document in the list when several arrive at once, and still lists ones from the old single list", async () => {
+    const t = setup(jev().decide);
+    t.store.set("runs/index.json", new TextEncoder().encode(JSON.stringify([{ id: "old1", name: "old", sender: null, cls: "PL", status: "review", created_at: "2026-11-01T00:00:00Z", flagged: null, reopened: false }])));
+    const opened = await Promise.all([1, 2, 3, 4, 5].map(() => t.open()));
+    const list = await t.call("/api/documents");
+    expect(list.map((d: { id: string }) => d.id).sort()).toEqual([...opened.map((d) => d.id), "old1"].sort());
+    expect(list.at(-1).id).toBe("old1");
   });
 
   it("holds a sender after a reopened document until one passes review unchanged", async () => {

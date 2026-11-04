@@ -15,8 +15,9 @@ import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, targets, type Delivery, type Flow } from "./webhook.ts";
 
-/** Keys: runs/<id>.pdf|json, runs/index.json, profiles.json, senders.json, flow.json, samples/index.json, samples/<id>.pdf|json. */
-export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void> };
+/** Keys: runs/<id>.pdf|json, space.json, <space>/index/<id>.json, <space>/holds/<sender>.json, profiles.json, flow.json, samples/index.json, samples/<id>.pdf|json; runs/index.json and senders.json are read from older data only. */
+/** list gives every key that starts with prefix, in any order. */
+export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]> };
 /** decide is the second system (Jev); without it nothing is verified and every document goes to a person. */
 export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide };
 /** Why a document was not approved automatically; empty when it was. */
@@ -63,11 +64,22 @@ export function createApp(deps: Deps) {
     status: d.approved ? (d.auto?.ok ? "auto" : "approved") : "review",
     flagged: d.verify ? d.verify.flagged : null, reopened: d.auto?.reasons.includes("reopened") ?? false,
   });
-  // shortcut: the list is one JSON rewritten on every save, so two saves at once can drop an entry; Postgres replaces it.
+  // The document list and sender holds are one small file per document and per sender, so two requests at once never
+  // overwrite each other's entries. They live under the namespace named in space.json (s0 without one); a demo is reset
+  // by writing a new name there. Requests never write it, so requests at once always agree on it.
+  const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
+  const entries = async <T>(prefix: string) =>
+    (await Promise.all((await files.list(prefix)).map((k) => getJson<T>(k)))).filter((x): x is Awaited<T> & {} => x != null);
+  const docList = async () => {
+    const own = await entries<ListedDoc>(`${await space()}/index/`);
+    const ids = new Set(own.map((d) => d.id));
+    // Documents listed before the per-document entries existed are still read from the old single list.
+    const old = ((await getJson<ListedDoc[]>("runs/index.json")) ?? []).filter((d) => !ids.has(d.id));
+    return [...own, ...old].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  };
   const save = async (d: Saved) => {
     await files.put(`runs/${d.id}.json`, toJson(d));
-    const list = ((await getJson<ListedDoc[]>("runs/index.json")) ?? []).filter((x) => x.id !== d.id);
-    await files.put("runs/index.json", toJson([listed(d), ...list]));
+    await files.put(`${await space()}/index/${d.id}.json`, toJson(listed(d)));
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
   const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
@@ -85,12 +97,13 @@ export function createApp(deps: Deps) {
     return r;
   }
 
-  const senderState = async () => (await getJson<SenderState>("senders.json")) ?? {};
+  const senderState = async (): Promise<SenderState> => {
+    const own = await entries<{ sender: string; hold: boolean }>(`${await space()}/holds/`);
+    return { ...((await getJson<SenderState>("senders.json")) ?? {}), ...Object.fromEntries(own.map((h) => [h.sender, { hold: h.hold }])) };
+  };
   const setHold = async (sender: string, hold: boolean) => {
-    const st = await senderState();
-    if (!!st[sender]?.hold === hold) return;
-    st[sender] = { ...st[sender], hold };
-    await files.put("senders.json", toJson(st));
+    if (!!(await senderState())[sender]?.hold === hold) return;
+    await files.put(`${await space()}/holds/${encodeURIComponent(sender)}.json`, toJson({ sender, hold }));
   };
   const layoutKey = (pages: Page[]) => [...new Set(pages.flatMap((p) => p.columns.map((c) => `${c.field}=${c.label.replace(/\s+/g, " ").trim().toUpperCase()}`)))].sort().join("|");
 
@@ -179,13 +192,13 @@ export function createApp(deps: Deps) {
       await intake(d);
       return json(200, view(d));
     }
-    if (req.method === "GET" && path === "/api/documents") return json(200, (await getJson<ListedDoc[]>("runs/index.json")) ?? []);
+    if (req.method === "GET" && path === "/api/documents") return json(200, await docList());
     if (req.method === "GET" && path === "/api/profiles") {
       return withStore(async (s) => json(200, s.senders().map((x) => ({ sender: x, versions: ["PL", "SO"].flatMap((c) => s.versions("sender", `${x}/${c}`)) }))));
     }
     // One entry per sender: its readings (prompt versions, examples left out), whether it is on hold, and its documents.
     if (req.method === "GET" && path === "/api/senders") {
-      const docs = (await getJson<ListedDoc[]>("runs/index.json")) ?? [];
+      const docs = await docList();
       const st = await senderState();
       return withStore(async (s) => json(200, s.senders().map((x) => ({
         sender: x, hold: !!st[x]?.hold,
