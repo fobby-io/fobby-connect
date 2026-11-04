@@ -8,7 +8,7 @@ export type LearnResult =
   | { outcome: "no_change" }
   | { outcome: "activated"; version: Version; tries: number; scores: { candidate: number[]; current: number[] } }
   | { outcome: "kept"; version: Version | null; always_review: string[]; tries: number };
-export type Approved = { sender: string; learn: LearnResult; corrected: number };
+export type Approved = { sender: string; learn: LearnResult; corrected: number; approved_at?: string };
 // The `view` the server returns for a document.
 export type Doc = {
   id: string; name: string; normalized: NormDoc; approved: Approved | null;

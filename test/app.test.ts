@@ -48,6 +48,54 @@ describe("createApp", () => {
     expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved.sender).toBe("ACME");
   });
 
+  it("exports only approved documents, from the stored answer", async () => {
+    const { app } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    const early = await call(app, `/api/documents/${doc.id}/export.csv`);
+    expect(early.status).toBe(409);
+    expect((await early.json()).error.code).toBe("not_approved");
+
+    // The answer equals the model output, so learning ends at no_change without a model call.
+    const ok = await (await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }))).json();
+    expect(ok.approved_at).toMatch(/^\d{4}-\d\d-\d\dT/);
+    const again = await call(app, `/api/documents/${doc.id}`);
+    const v = (await again.json()).approved;
+    expect(v.approved_at).toBe(ok.approved_at);
+    expect("answer" in v).toBe(false);
+
+    const csv = await call(app, `/api/documents/${doc.id}/export.csv`);
+    expect(csv.status).toBe(200);
+    expect(csv.headers.get("content-type")).toBe("text/csv; charset=utf-8");
+    expect(csv.headers.get("content-disposition")).toBe(`attachment; filename="${doc.id}.csv"`);
+    const j = await call(app, `/api/documents/${doc.id}/export.json`);
+    expect(j.headers.get("content-disposition")).toBe(`attachment; filename="${doc.id}.json"`);
+    expect(j.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    const body = await j.json();
+    expect(body.sender).toBe("ACME");
+    expect(body.rows[0].pkgs.v).toBe("50");
+
+    // A second submit keeps what the first one stored.
+    const twice = await (await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "other", answer: [PAGE] }))).json();
+    expect(twice.approved_at).toBe(ok.approved_at);
+    expect((await (await call(app, `/api/documents/${doc.id}/export.json`)).json()).sender).toBe("ACME");
+  });
+
+  it("refuses to export a document approved before export existed", async () => {
+    const { app, store } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
+    const key = `runs/${doc.id}.json`;
+    const saved = JSON.parse(new TextDecoder().decode(store.get(key)));
+    saved.approved = { sender: saved.approved.sender, learn: saved.approved.learn, corrected: saved.approved.corrected };
+    store.set(key, new TextEncoder().encode(JSON.stringify(saved)));
+    for (const ext of ["csv", "json"]) {
+      const r = await call(app, `/api/documents/${doc.id}/export.${ext}`);
+      expect(r.status).toBe(409);
+      expect((await r.json()).error.code).toBe("not_approved");
+    }
+    expect("approved_at" in (await (await call(app, `/api/documents/${doc.id}`)).json()).approved).toBe(false);
+  });
+
   it("opens a sample as a new copy without calling the model", async () => {
     const c = reads();
     const { app, store } = setup(c);

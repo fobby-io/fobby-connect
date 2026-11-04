@@ -160,6 +160,35 @@ function Upload({ onFile, onOpen, error }: { onFile: (f: File) => void; onOpen: 
 
 const SECTION = "mb-4 gap-0 rounded-2xl p-[18px] shadow-none";
 
+function Export({ doc }: { doc: Doc }) {
+  const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  const base = `/api/documents/${doc.id}/export`;
+  const url = location.origin + `${base}.json`;
+  // The clipboard is missing outside https and can refuse; then the address is shown to copy by hand.
+  const copyUrl = async () => {
+    try { await navigator.clipboard.writeText(url); setCopy("done"); setTimeout(() => setCopy("idle"), 2000); }
+    catch { setCopy("failed"); }
+  };
+  return (
+    <Card className={SECTION}>
+      <h3 className="mb-3 text-base font-bold">匯出</h3>
+      {doc.approved?.approved_at ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild><a href={`${base}.csv`} download>下載 CSV</a></Button>
+          <Button asChild variant="outline"><a href={`${base}.json`} download>下載 JSON</a></Button>
+          <Button variant="outline" onClick={copyUrl}>複製 API 網址</Button>
+          <span role="status" className="text-sm text-muted-foreground">
+            {copy === "done" && "已複製"}
+            {copy === "failed" && <>無法自動複製，請手動複製：<code className="select-all break-all">{url}</code></>}
+          </span>
+        </div>
+      ) : (
+        <p className="text-muted-foreground">這份在匯出功能上線前核准，沒有存下核准內容。重新打開範例再核准一次即可匯出。</p>
+      )}
+    </Card>
+  );
+}
+
 function Result({ doc }: { doc: Doc }) {
   const a = doc.approved!, l = a.learn;
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
@@ -199,6 +228,7 @@ function Result({ doc }: { doc: Doc }) {
   return (
     <>
       {card}
+      <Export doc={doc} />
       <Card className={SECTION}>
         <h3 className="mb-3 text-base font-bold">系統記住的各家讀法</h3>
         {error != null && <p className="text-warn" role="alert">{error instanceof Error ? error.message : String(error)}</p>}

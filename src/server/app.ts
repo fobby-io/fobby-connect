@@ -11,11 +11,13 @@ import { sparkRewrite } from "../profiles/rewrite.ts";
 import { checkDocument } from "../rules/checks.ts";
 import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { schemas } from "../shared/model-output.ts";
+import { exportCsv, exportJson, type Exportable } from "./export.ts";
 
 /** Keys: runs/<id>.pdf|json, profiles.json, samples/index.json, samples/<id>.pdf|json. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void> };
 export type Deps = { files: Files; client: MetaClient; spent?: () => number };
-export type Saved = { id: string; name: string; run: RunResult; pages: PageInput[]; approved?: { sender: string; learn: unknown; corrected: number } };
+// approved.answer and approved_at are missing on documents approved before export existed.
+export type Saved = { id: string; name: string; run: RunResult; pages: PageInput[]; approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string } };
 export type Sample = { id: string; name: string; sender: string };
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
@@ -24,6 +26,8 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 const toJson = (x: unknown) => enc.encode(JSON.stringify(x));
 const fail = (status: number, code: string, message: string) => Object.assign(new Error(message), { status, code });
 const json = (status: number, x: unknown) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json" } });
+const download = (body: string, type: string, filename: string) =>
+  new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "content-disposition": `attachment; filename="${filename}"` } });
 
 export function createApp(deps: Deps) {
   const client = creditGuard(deps.client);
@@ -41,7 +45,7 @@ export function createApp(deps: Deps) {
   };
   const save = (d: Saved) => files.put(`runs/${d.id}.json`, toJson(d));
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
-  const view = (d: Saved) => ({ id: d.id, name: d.name, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ?? null, spent: spent() });
+  const view = (d: Saved) => ({ id: d.id, name: d.name, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
 
   // Profiles live in one JSON: read per request, written back only when the request changed them.
@@ -100,6 +104,14 @@ export function createApp(deps: Deps) {
       return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });
     }
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, view(await load(m[1]!)));
+    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/export\.(csv|json)$/))) {
+      const d = await load(m[1]!);
+      if (!d.approved?.answer || !d.approved.approved_at) throw fail(409, "not_approved", "這份文件還沒核准，核准後才能匯出。");
+      const x = d as Exportable;
+      return m[2] === "csv"
+        ? download(exportCsv(x), "text/csv", `${d.id}.csv`)
+        : download(JSON.stringify(exportJson(x), null, 2), "application/json", `${d.id}.json`);
+    }
     // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.
     if (req.method === "POST" && path === "/api/normalize") {
       const answer = (await bodyJson<{ answer: unknown[] }>()).answer.map((p) => schemas.compact.parse(p));
@@ -120,7 +132,7 @@ export function createApp(deps: Deps) {
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/approve$/))) {
       const d = await load(m[1]!);
       // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
-      if (d.approved) return json(200, { corrected: d.approved.corrected, learn: d.approved.learn, spent: spent() });
+      if (d.approved) return json(200, { corrected: d.approved.corrected, learn: d.approved.learn, approved_at: d.approved.approved_at, spent: spent() });
       const b = await bodyJson<{ sender: string; answer: Page[] }>();
       const sender = (b.sender ?? "").trim().toUpperCase();
       if (!sender) throw fail(400, "sender_required", "Name the sender before approving.");
@@ -131,9 +143,10 @@ export function createApp(deps: Deps) {
       const result = await withStore((s) => learn(s, {
         doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
       }, replayReader(g, s), sparkRewrite(client)));
-      d.approved = { sender, learn: result, corrected };
+      const approved_at = new Date().toISOString();
+      d.approved = { sender, learn: result, corrected, answer, approved_at };
       await save(d);
-      return json(200, { corrected, learn: result, spent: spent() });
+      return json(200, { corrected, learn: result, approved_at, spent: spent() });
     }
     throw fail(404, "not_found", path);
   }

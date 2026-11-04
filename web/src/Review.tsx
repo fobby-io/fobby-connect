@@ -71,8 +71,8 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
     setApproval({ busy: true });
     onStep(3);
     try {
-      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"] }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current });
-      onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected } });
+      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current });
+      onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected, approved_at: j.approved_at } });
     } catch (e) {
       setApproval({ error: e });
     }
