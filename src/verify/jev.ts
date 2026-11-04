@@ -1,9 +1,11 @@
 // The second system: Jev (TypeSafe's decision model, via OpenRouter) checks every value the first read produced
-// against the page's own text layer. It answers yes/no per value with a probability; it never writes a value itself.
+// against the page's own text layer, or against pictures of a scanned page. It answers yes/no per value with a
+// probability; it never writes a value itself.
 import type { PageInput } from "../pipeline/run.ts";
 import { norm } from "../pipeline/grounding.ts";
 import type { GridItem } from "../pipeline/text-serialize.ts";
 import type { Page } from "../profiles/loop.ts";
+import { fit, MAX_SIDE, pageScan, png } from "./page-image.ts";
 
 export type Question = { type: "noul"; instructions: string };
 export type DecisionsRequest = { state: unknown; questions: Record<string, Question> };
@@ -80,9 +82,56 @@ async function pool<T>(jobs: (() => Promise<T>)[], n = 8): Promise<T[]> {
   return out;
 }
 
+const image = (url: string) => ({ type: "image_url", image_url: { url } });
+// One scan decoded at a time: a 300 dpi A4 page is about 35 MB of RGBA, so parallel pages would multiply peak memory.
+let decoding: Promise<unknown> = Promise.resolve();
+const oneAtATime = <T>(f: () => Promise<T>): Promise<T> => { const r = decoding.then(f, f); decoding = r.catch(() => {}); return r; };
+// The one-page PDF preparePages attached to a scanned page.
+const pagePdf = (input: PageInput) => {
+  const f = input.content.find((c) => c.type === "file");
+  const b64 = f?.type === "file" ? f.file.file_data.split(",")[1] : undefined;
+  return b64 ? Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)) : null;
+};
+
 /**
- * One Jev request per table row and one per page for header and totals. Scanned pages (no text layer) are not checked:
- * the caller sends them to a person. A failed request leaves its values unchecked rather than failing the upload.
+ * A scanned page, the same questions on the page's picture instead of its text: header and totals in one request, and
+ * one request per line item. A row is named by its place among the item rows and its other values, not cut out of the
+ * picture: the first read's row boxes on scans were up to 60 page units off (0065-PK page 3, 2026-11-04).
+ */
+async function checkScan(ask: (r: DecisionsRequest) => Promise<Record<string, { noul?: number }> | null>, input: PageInput, p: Page, empty: PageCheck): Promise<PageCheck> {
+  const pdf = pagePdf(input);
+  const page = pdf && await oneAtATime(async () => { const s = await pageScan(pdf).catch(() => null); return s && png(fit(s, MAX_SIDE)); });
+  if (!page) return empty;
+  const items = p.rows.filter((r) => r.t === "item" || r.t === "ditto");
+
+  const vals = [...Object.entries(p.header), ...Object.entries(p.totals)].filter(([, v]) => v?.v);
+  const valueJob = async () => {
+    if (!vals.length) return {};
+    const questions = Object.fromEntries(vals.map(([k]) => [k, { type: "noul" as const, instructions: `extracted.${k} is the ${VALUE_NAMES[k] ?? k} printed on the scanned page; it may be only the part of the printed text that is the ${VALUE_NAMES[k] ?? k}.` }]));
+    const a = await ask({ state: ["The scanned page:", image(page), { extracted: Object.fromEntries(vals.map(([k, v]) => [k, v!.v])) }], questions });
+    return a ? Object.fromEntries(vals.map(([k]) => [k, a[k]?.noul ?? 0])) : {};
+  };
+  const rowJobs = p.rows.map((r) => async (): Promise<{ ok: boolean; cells: (number | null)[] }> => {
+    const asked = r.t === "item" || r.t === "ditto" ? p.columns.map((_, ci) => ci).filter((ci) => (r.cells[ci] ?? "").trim() !== "") : [];
+    if (!asked.length) return { ok: true, cells: r.cells.map(() => null) };
+    const extracted = Object.fromEntries(asked.map((ci) => [`c${ci}`, { printed_column: p.columns[ci]!.label.replace(/\n/g, " "), value: r.cells[ci] }]));
+    const n = items.indexOf(r) + 1;
+    const row = { line_item: `${n} of ${items.length}, counting the table's line items from the top of this page`, first_lines: asked.map((ci) => (r.cells[ci] ?? "").split("\n")[0]).join(" | ") };
+    const questions = Object.fromEntries(asked.map((ci) => {
+      const c = p.columns[ci]!;
+      return [`c${ci}`, { type: "noul" as const, instructions: `extracted.c${ci}.value is the ${FIELD_NAMES[c.field] ?? c.field} printed on the scanned page in the table line item described by row, under the column headed "${c.label.replace(/\n/g, " ")}".` }];
+    }));
+    const a = await ask({ state: ["The scanned page:", image(page), { row, extracted }], questions });
+    return a ? { ok: true, cells: r.cells.map((_, ci) => (asked.includes(ci) ? a[`c${ci}`]?.noul ?? 0 : null)) } : { ok: false, cells: r.cells.map(() => null) };
+  });
+  const [values, rows] = await Promise.all([valueJob(), pool(rowJobs)]);
+  return { page_no: input.page_no, checked: (!vals.length || Object.keys(values).length > 0) && rows.every((x) => x.ok), values, rows: rows.map((x) => x.cells) };
+}
+
+/**
+ * One Jev request per table row and one per page for header and totals, on the text layer or, for a scanned page, on
+ * pictures of it. A page Jev cannot see (no text layer and no scan image) and a failed request are left unchecked
+ * rather than failing the upload; the caller sends them to a person.
  */
 export async function verifyDocument(decide: Decide, pages: PageInput[], outputs: Page[]): Promise<Verification> {
   let cost = 0;
@@ -94,7 +143,8 @@ export async function verifyDocument(decide: Decide, pages: PageInput[], outputs
   const checks = await Promise.all(outputs.map(async (p, pi): Promise<PageCheck> => {
     const input = pages[pi]!;
     const empty: PageCheck = { page_no: input.page_no, checked: false, values: {}, rows: p.rows.map((r) => r.cells.map(() => null)) };
-    if (input.route !== "text" || !input.items.length) return empty;
+    if (input.route === "vision") return checkScan(ask, input, p, empty);
+    if (!input.items.length) return empty;
     const items = input.items;
 
     // Row boxes are typed loosely by the model schema; they are [x0, y0, x1, y1] in 0-1000 page units like the text items.

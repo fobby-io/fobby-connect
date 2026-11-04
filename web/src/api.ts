@@ -23,7 +23,7 @@ export type Doc = {
   run: {
     cls: string | null; sender: string | null; issuer: string | null;
     prompt: { level: string; version: number } | null;
-    pages: { page_no: number; output: Page }[]; findings: Finding[];
+    pages: { page_no: number; route: "text" | "vision"; output: Page }[]; findings: Finding[];
   };
 };
 export type Sample = { id: string; name: string; sender: string };
@@ -42,7 +42,7 @@ export type SenderInfo = { sender: string; hold: boolean; versions: ReadingVersi
 export const reasonText = (r: AutoReason) => ({
   unknown_sender: t("第一次收到這家的這種文件", "First document of this kind from this sender"),
   on_hold: t("這家之前有一份自動確認後被改過，先暫停自動確認", "An earlier automatic approval for this sender was corrected, so automatic approval is paused"),
-  not_checked: t("第二系統沒有核對到每個值（掃描頁或核對失敗）", "The second system could not check every value (a scanned page or a failed check)"),
+  not_checked: t("第二系統沒有核對到每個值（核對失敗，或頁面沒有文字也沒有掃描圖）", "The second system could not check every value (a failed check, or a page with neither text nor a scan image)"),
   flagged: t("第二系統對某些值有疑慮", "The second system doubts some values"),
   findings: t("自動核對有沒通過的項目", "Some automatic checks failed"),
   layout_changed: t("欄位跟這家上一份不一樣，可能換了格式", "The columns differ from this sender's last document; the layout may have changed"),

@@ -35,7 +35,7 @@ export function checkUrl(raw: string): string | null {
   try { u = new URL(raw); } catch { return "not a URL"; }
   if (u.protocol !== "https:") return "only https:// URLs";
   const h = u.hostname.toLowerCase();
-  // shortcut: checks the name as written, not what it resolves to; Workers cannot reach private networks anyway, the local server can.
+  // shortcut: checks the name as written, not what it resolves to; a host on a private network should also block private addresses at its egress.
   if (h === "localhost" || h.endsWith(".localhost") || h.startsWith("[") || /^(127|10|0)\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(h)) return "local or private addresses are not allowed";
   return null;
 }

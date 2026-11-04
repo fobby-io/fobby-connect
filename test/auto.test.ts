@@ -5,6 +5,8 @@ import { checkDocument } from "../src/rules/checks.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 import { verifyDocument, type Decide } from "../src/verify/jev.ts";
 import { checkUrl, deliver, sign, targets, type Graph } from "../src/server/webhook.ts";
+import { png } from "../src/verify/page-image.ts";
+import { PDFDocument } from "pdf-lib";
 
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
 const { createApp } = await import("../src/server/app.ts");
@@ -128,6 +130,25 @@ describe("verifyDocument", () => {
     const down: Decide = async () => { throw new Error("HTTP 503"); };
     const v = await verifyDocument(down, [pageInput()], [page()]);
     expect(v).toMatchObject({ unchecked_pages: 1, checked: 0, error: "HTTP 503" });
+  });
+
+  it("checks a scanned page against its picture, scaled to Jev's limits", async () => {
+    // A 2000x2600 grey "scan" with a dark band, as a one-page PDF like preparePages attaches to a vision page.
+    const scan = { w: 2000, h: 2600, px: new Uint8Array(2000 * 2600).fill(240) };
+    scan.px.fill(20, 2000 * 1000, 2000 * 1100);
+    const doc = await PDFDocument.create();
+    const pageObj = doc.addPage([595, 842]);
+    pageObj.drawImage(await doc.embedPng(Uint8Array.from(atob((await png(scan)).split(",")[1]!), (c) => c.charCodeAt(0))), { x: 0, y: 0, width: 595, height: 842 });
+    const b64 = btoa(String.fromCharCode(...await doc.save()));
+    const input = { page_no: 1, route: "vision" as const, items: [], content: [{ type: "file" as const, file: { filename: "p.pdf", file_data: `data:application/pdf;base64,${b64}` } }] };
+
+    const { decide, asked } = jev();
+    const v = await verifyDocument(decide, [input], [page()]);
+    expect(v).toMatchObject({ checked: 2, flagged: 0, unchecked_pages: 0 });
+    const url = (asked[0]!.state as unknown[]).find((x): x is { image_url: { url: string } } => typeof x === "object" && x !== null && "image_url" in x)!.image_url.url;
+    const bytes = Uint8Array.from(atob(url.split(",")[1]!), (c) => c.charCodeAt(0));
+    const dims = new DataView(bytes.buffer);
+    expect([dims.getUint32(16), dims.getUint32(20)]).toEqual([1206, 1568]);
   });
 
   it("counts values under the pass mark as flagged", async () => {
