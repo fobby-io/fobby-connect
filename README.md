@@ -4,7 +4,7 @@
 
 Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand. One document takes 30–60 minutes, and every sender prints its own layout.
 
-Fobby Connect reads each page with Meta's Muse Spark into one fixed schema. Code checks the numbers and a second system checks every value. When a clerk corrects a value, Muse Wonder rewrites that sender's reading notes, so the sender's next document needs less review. A document from a known sender that passes every check is approved and sent on with no person involved.
+Fobby Connect reads each page with Meta's Muse Spark into one fixed schema. Code checks the numbers and a second system checks every value. When a clerk corrects a value, Muse Wonder rewrites that sender's prompt, so the sender's next document needs less review. A document from a known sender that passes every check is approved and sent on with no person involved.
 
 ## Try it
 
@@ -47,9 +47,9 @@ flowchart TD
     P --> Q(["Export: CSV, JSON,<br/>signed webhook, email"])
     N -. "corrections" .-> R{"A misread, or a<br/>conversion rule?"}
     R -- "rule" --> S["rule_reviews<br/>for the rules, not the reader"]
-    R -- "misread" --> T["In the background:<br/>Muse Wonder rewrites the<br/>sender's reading notes"]
+    R -- "misread" --> T["In the background:<br/>Muse Wonder rewrites the<br/>sender's prompt"]
     T --> U{"Replay the sender's approved<br/>documents: no regression?"}
-    U -- "yes" --> V["New notes go live<br/>for this sender"]
+    U -- "yes" --> V["New prompt goes live<br/>for this sender"]
     U -- "no" --> W["Field marked always review"]
     V -. "next document" .-> G
 
@@ -77,7 +77,7 @@ flowchart TD
 | **Checks in code, targeted re-reads.** Sums, pallets, POs and cross-page headers are checked without a model. Only a failing page is read again, with the findings as a hint, and the re-read is kept only if it fails fewer checks. | A wrong number that breaks a sum or a check digit is caught without a model call. A re-read costs one page, not a whole document. |
 | **A second system on every value.** For a sender seen before, a separate decision model checks each value against the page. | A document is approved without a person only when two systems agree and every rule passes. |
 | **Normalize once, store one record.** Kilograms, UN/LOCODE ports, ISO dates and package ranges are computed in code and stored one column per field. The raw text is kept beside each value. | Exports, webhooks and email all send the same checked values, whatever layout the sender used. |
-| **Learn from the right corrections.** A correction that matches the printed text is a misread, and the sender's notes are rewritten from it. A correction that comes from a conversion goes to `rule_reviews` instead. New notes go live only if replaying the sender's approved documents shows no regression. | The reader learns only from real misreads, and a change that reads the sender's approved documents worse is not activated. |
+| **Learn from the right corrections.** A correction that matches the printed text is a misread, and the sender's prompt is rewritten from it. A correction that comes from a conversion goes to `rule_reviews` instead. A new prompt goes live only if replaying the sender's approved documents shows no regression. | The reader learns only from real misreads, and a change that reads the sender's approved documents worse is not activated. |
 | **Nobody waits.** An upload is listed as "reading" at once and the list updates when it is done. Learning runs after the approval, in the background. | The clerk keeps working while pages are read and while the reader learns. |
 
 ## How it works
@@ -89,7 +89,7 @@ flowchart TD
 5. **Approve.** A document is approved without a person only when the sender is known and not on hold, every value passed the second check, every rule passed and the columns match the sender's last approved document. Anything else goes to review with the reasons. "This one is wrong" on an approved document sends it back and puts the sender on hold until a document passes review unchanged.
 6. **Normalize (code, no model).** Printed text becomes typed values (dates, ports as UN/LOCODE, weights in kg, ranges, PO and part numbers filled down), and every value keeps its raw text.
 7. **Review.** The clerk sees the page next to the result, wires printed columns to standard fields, adds a column the read missed (one page re-read, only the new column merged), edits raw text and sees the checks re-run.
-8. **Learn.** On approval, `muse-wonder-1.0` compares the corrections with the printed text and rewrites that sender's reading notes, with no document-specific values. The new notes are activated only if replaying the sender's approved documents shows no regression; otherwise the field is marked "always review".
+8. **Learn.** On approval, `muse-wonder-1.0` compares the corrections with the printed text and rewrites the reading notes in that sender's prompt, with no document-specific values. The new prompt is activated only if replaying the sender's approved documents shows no regression; otherwise the field is marked "always review".
 9. **Export.** One flow for the team: approved data branches by sender into its outputs.
    - Download: `GET /api/documents/<id>/export.json` (the full record: header, containers, line items and totals with raw text, the check results, a link to the PDF, how much was corrected; `schema_version: 1`) and `export.csv` (one line item per row for Excel; UTF-8 with BOM). Unapproved documents answer 409.
    - Webhook: the same JSON is POSTed as `document.approved` (or `document.corrected`), signed with `X-Fobby-Signature: sha256=HMAC(secret, timestamp.body)`. The receiver's status code and receipt id are kept; a failed delivery is retried after 1, 5 and 30 minutes and 2 hours with the same delivery id.
@@ -119,8 +119,8 @@ Tests: `npx tsc --noEmit && npx vitest run`. Sample PDFs: `npx tsx scripts/build
 
 | Model | Where |
 |---|---|
-| `muse-spark-1.3` (standard tier) | Reading every page (`src/gateway/`), re-reads with check hints and missing columns, replaying approved documents to validate new notes (`src/pipeline/run.ts`) |
-| `muse-wonder-1.0` | Comparing a clerk's corrections with the printed page and rewriting that sender's reading notes (`src/profiles/rewrite.ts`) |
+| `muse-spark-1.3` (standard tier) | Reading every page (`src/gateway/`), re-reads with check hints and missing columns, replaying approved documents to validate a new prompt (`src/pipeline/run.ts`) |
+| `muse-wonder-1.0` | Comparing a clerk's corrections with the printed page and rewriting the notes in that sender's prompt (`src/profiles/rewrite.ts`) |
 
 Customer documents only go to tiers whose data is not used to train Meta's models; the gateway refuses to send anything but synthetic data to a contributor-tier model. The second check (`src/verify/`) is not a Meta model: it is Jev (TypeSafe) through OpenRouter's decisions API, and it is optional.
 
