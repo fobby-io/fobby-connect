@@ -7,7 +7,7 @@ import { Card } from "./components/ui/card.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table.tsx";
 import { fmt } from "./diff.ts";
 import { DeliveryRow, Flow } from "./Flow.tsx";
-import { setLang, t, useLang } from "./i18n.ts";
+import { t, useLang } from "./i18n.ts";
 import { labels } from "./labels.ts";
 import { cn } from "./lib/utils.ts";
 import { Review } from "./Review.tsx";
@@ -32,7 +32,7 @@ type Screen =
 export const SECTION = "mb-4 gap-0 rounded-2xl p-[18px] shadow-none";
 
 export function App() {
-  const lang = useLang();
+  useLang();
   const [route, setRoute] = useState<Route>(() => parse(location.hash));
   const [screen, setScreen] = useState<Screen | null>(null);
   // A document opened in this tab is shown at once; a reload or a link fetches it.
@@ -92,7 +92,6 @@ export function App() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-3">
-          <LangSwitch lang={lang} />
           {/* AGPL §13: people using the hosted site get a way to the source. */}
           <a href="https://github.com/fobby-io/fobby-connect" target="_blank" rel="noreferrer" title={t("原始碼（GitHub）", "Source code (GitHub)")} aria-label={t("原始碼（GitHub）", "Source code (GitHub)")}
             className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
@@ -180,19 +179,6 @@ export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
   if (d.status === "approved") return <Badge variant="secondary" className="rounded-full">{t("已確認", "Approved")}</Badge>;
   return <Badge className="rounded-full bg-warn-bg text-warn">{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
 };
-// Both languages always visible, the current one filled: a single "EN" button read as the language you were in.
-function LangSwitch({ lang }: { lang: string }) {
-  const opts = [["zh", "中文"], ["en", "EN"]] as const;
-  return (
-    <div role="group" aria-label={t("介面語言", "Language")} className="flex rounded-full border bg-muted p-0.5 text-[13px]">
-      {opts.map(([l, label]) => (
-        <button key={l} type="button" aria-pressed={lang === l} onClick={() => setLang(l)} lang={l === "zh" ? "zh-Hant" : "en"}
-          className={cn("cursor-pointer rounded-full border-0 px-2.5 py-1 leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-            lang === l ? "bg-card font-semibold text-foreground shadow-sm" : "bg-transparent text-muted-foreground hover:text-foreground")}>{label}</button>
-      ))}
-    </div>
-  );
-}
 
 // GitHub's mark, from Octicons (MIT).
 const GitHubMark = () => (
