@@ -56,6 +56,17 @@ describe("web diff helpers", () => {
     ]);
   });
 
+  it("words failed checks in English when the screen is switched", async () => {
+    const { setLang } = await import("../web/src/i18n.ts");
+    setLang("en");
+    try {
+      const p = problems([{ page: 1, path: "totals.total_gw_kg", message: "rows add up to 1234.5 gw_kg, the totals line says 1,200 KGS" }]);
+      expect(p[0]!.text).toBe("gross weight does not add up: the rows give 1,234.5, the totals line says 1,200 KGS");
+    } finally {
+      setLang("zh");
+    }
+  });
+
   it("formats plain numbers only", () => {
     expect(fmt("1234.5678")).toBe("1,234.568");
     expect(fmt("12 PCS")).toBe("12 PCS");

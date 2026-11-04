@@ -1,7 +1,8 @@
 // What the clerk changed against the model's read, and the failed checks in plain words. Moved from the old web/index.html unchanged.
 import type { Finding } from "../../src/rules/checks.ts";
 import type { ModelOutput } from "../../src/shared/model-output.ts";
-import { CHECK_COL, HEAD, SUM_NAME } from "./labels.ts";
+import { t } from "./i18n.ts";
+import { CHECK_COL, labels } from "./labels.ts";
 
 export type Page = ModelOutput<"compact">;
 export type { Finding };
@@ -41,11 +42,14 @@ export function problems(findings: Finding[]): Problem[] {
   return [...Map.groupBy(findings, (f) => f.message)].map(([msg, list]) => {
     const key = list[0]!.path.split(".")[1]!.replace(/\[\d+\]/, "");
     let m: RegExpMatchArray | null, text = msg;
-    if ((m = msg.match(/^rows add up to ([\d.]+) (\w+), the totals line says (.+)$/))) text = `${SUM_NAME[m[2]!] ?? m[2]}對不上：每列加起來是 ${fmt(m[1])}，合計列印的是 ${m[3]}`;
-    else if ((m = msg.match(/^PO in the shipping marks but in no row: (.+)$/))) text = `嘜頭上列了 PO ${m[1]}，但明細裡沒有`;
-    else if ((m = msg.match(/^PO in the rows but not in the shipping marks: (.+)$/))) text = `明細裡的 PO ${m[1]} 沒有出現在嘜頭上`;
-    else if ((m = msg.match(/^(\w+) differs between pages: page (\d+) has (.+), page (\d+) has (.+)$/))) text = `${HEAD[m[1]!] ?? m[1]}前後不一致：第 ${m[2]} 頁是 ${m[3]}，第 ${m[4]} 頁是 ${m[5]}`;
-    else if ((m = msg.match(/^container number (\S+) fails/))) text = `貨櫃號碼 ${m[1]} 的檢查碼不對`;
+    const { SUM_NAME, HEAD } = labels();
+    if ((m = msg.match(/^rows add up to ([\d.]+) (\w+), the totals line says (.+)$/)))
+      text = t(`${SUM_NAME[m[2]!] ?? m[2]}對不上：每列加起來是 ${fmt(m[1])}，合計列印的是 ${m[3]}`, `${SUM_NAME[m[2]!] ?? m[2]} does not add up: the rows give ${fmt(m[1])}, the totals line says ${m[3]}`);
+    else if ((m = msg.match(/^PO in the shipping marks but in no row: (.+)$/))) text = t(`嘜頭上列了 PO ${m[1]}，但明細裡沒有`, `PO ${m[1]} is in the shipping marks but in no line item`);
+    else if ((m = msg.match(/^PO in the rows but not in the shipping marks: (.+)$/))) text = t(`明細裡的 PO ${m[1]} 沒有出現在嘜頭上`, `PO ${m[1]} is in the line items but not in the shipping marks`);
+    else if ((m = msg.match(/^(\w+) differs between pages: page (\d+) has (.+), page (\d+) has (.+)$/)))
+      text = t(`${HEAD[m[1]!] ?? m[1]}前後不一致：第 ${m[2]} 頁是 ${m[3]}，第 ${m[4]} 頁是 ${m[5]}`, `${HEAD[m[1]!] ?? m[1]} differs between pages: page ${m[2]} has ${m[3]}, page ${m[4]} has ${m[5]}`);
+    else if ((m = msg.match(/^container number (\S+) fails/))) text = t(`貨櫃號碼 ${m[1]} 的檢查碼不對`, `Container number ${m[1]} fails its check digit`);
     return { text, col: CHECK_COL[key], key, pages: list.map((x) => x.page).sort() };
   });
 }

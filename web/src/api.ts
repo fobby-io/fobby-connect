@@ -1,5 +1,6 @@
 import type { NormDoc } from "../../src/normalize/normalize.ts";
 import type { Finding, Page } from "./diff.ts";
+import { t } from "./i18n.ts";
 
 export type { NormDoc };
 // What the screen reads of src/profiles/loop.ts LearnResult; importing it would pull Node built-ins into the web check.
@@ -41,4 +42,20 @@ export const post = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 export const isCreditExhausted = (e: unknown) => e instanceof ApiError && e.code === "credit_exhausted";
-export const CREDIT_TEXT = "示範額度已用完，請打開範例貨件";
+export const creditText = () => t("示範額度已用完，請打開範例貨件", "The demo credit is used up. Open a sample shipment instead.");
+
+// The server writes its messages in Chinese; known codes get both languages here, anything else shows the server's text.
+const MESSAGES: Record<string, [zh: string, en: string]> = {
+  credit_exhausted: ["示範額度已用完，請打開範例貨件", "The demo credit is used up. Open a sample shipment instead."],
+  too_many_pages: ["這份文件超過 20 頁，示範版一次最多讀 20 頁。", "This document has more than 20 pages; the demo reads at most 20 per upload."],
+  too_large: ["檔案超過 25 MB。", "The file is over 25 MB."],
+  bad_column: ["請填文件上印的欄名，並選它是哪個欄位。", "Name the printed column and pick what it is."],
+  still_missing: ["重讀後還是沒有這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。", "The re-read still has no such column, or its rows do not line up. Check the name matches what is printed."],
+  sender_required: ["請先填寄件公司再確認。", "Name the sender before approving."],
+  not_approved: ["這份文件還沒核准，核准後才能匯出。", "This document is not approved yet; approve it to export."],
+  not_found: ["找不到這份文件。", "Document not found."],
+};
+export function errorMessage(e: unknown): string {
+  if (e instanceof ApiError && MESSAGES[e.code]) return t(...MESSAGES[e.code]!);
+  return e instanceof Error ? e.message : String(e);
+}

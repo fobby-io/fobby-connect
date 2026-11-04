@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 212" role="img" aria-label="Fobby">
+  <path fill="#2456C9" d="M44 6H172A40 40 0 0 1 212 46V134Q212 150 200.8 162.8L167 201Q163 206 162.5 200C163 178 178 160 204 150H170A20 20 0 0 0 150 170V208C140 200 135 190 122 190H44A40 40 0 0 1 4 150V46A40 40 0 0 1 44 6Z"/>
+  <g transform="translate(4 0)">
+    <path fill="#FFFFFF" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round" d="M69.7 48H82A10 10 0 0 1 92 58V70.3L63 99.3L40.7 77Z"/>
+    <circle cx="79" cy="61" r="6.5" fill="#2456C9"/>
+    <path fill="#FFFFFF" d="M121 43H145L169 67V98A9 9 0 0 1 160 107H121A9 9 0 0 1 112 98V52A9 9 0 0 1 121 43Z"/>
+    <path fill="#2456C9" d="M143 56V74H161Z"/>
+    <rect fill="#FFFFFF" x="39" y="121" width="130" height="17" rx="8.5"/>
+  </g>
+</svg>

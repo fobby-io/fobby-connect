@@ -4,7 +4,7 @@
 
 Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand: 30–60 minutes per document, and every sender uses its own layout. Fobby Connect reads them with Meta's Muse Spark into one fixed schema, checks the numbers with code, and learns each sender's layout from the clerk's corrections, so the next document from that sender needs less review.
 
-Live demo: https://connect.fobby.io (open a sample shipment, or upload your own PDF).
+Live demo: https://connect.fobby.io (open a sample shipment, or upload your own PDF). The screen follows the browser language, Chinese or English, with a switch in the top right.
 
 ## How it works
 
