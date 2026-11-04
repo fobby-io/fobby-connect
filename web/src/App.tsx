@@ -202,10 +202,10 @@ export const DocIcon = ({ so }: { so?: boolean }) => (
   </span>
 );
 
-const Icon = ({ d, className = "text-primary" }: { d: string; className?: string }) => (
+export const Icon = ({ d, className = "text-primary" }: { d: string; className?: string }) => (
   <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={cn("flex-none", className)}><path d={d} /></svg>
 );
-const ICON = {
+export const ICON = {
   inbox: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
   spark: "M13 2 4 14h7l-1 8 9-12h-7z",
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
