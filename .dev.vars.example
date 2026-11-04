@@ -1,0 +1,12 @@
+# Copy to .dev.vars and fill in. .dev.vars is git-ignored; never commit real keys.
+
+# Required: Meta Model API key, reads every page.
+META_API_KEY=
+
+# Optional: OpenRouter key for the second check (Jev). Without it nothing is verified and every document goes to review.
+OPENROUTER_API_KEY=
+
+# Optional: where documents are kept (default data/), the port (default 8787), and the live model spend cap in US$ (default 5).
+# DATA_DIR=data
+# PORT=8787
+# MAX_SPEND=5

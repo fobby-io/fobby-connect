@@ -31,7 +31,7 @@ Needs Node 22 and a Meta Model API key. The second check needs an OpenRouter key
 
 ```bash
 npx -y pnpm@12.16.1 install --frozen-lockfile
-echo "META_API_KEY=..." > .dev.vars
+cp .dev.vars.example .dev.vars   # then fill in META_API_KEY
 npx -y pnpm@12.16.1 build:web
 npx tsx src/server/local.ts      # http://localhost:8787
 ```
