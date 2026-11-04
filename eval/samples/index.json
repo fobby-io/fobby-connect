@@ -1,22 +1,17 @@
 [
   {
     "id": "pl-1",
-    "name": "Packing list (ERP, 2 pages)",
+    "name": "Packing list 1 (2 pages)",
     "sender": "LUMEN ELECTRIC LTD."
   },
   {
     "id": "pl-2",
-    "name": "Packing list (ERP)",
-    "sender": "ORCHID FASTENERS GMBH"
+    "name": "Packing list 2, same sender",
+    "sender": "LUMEN ELECTRIC LTD."
   },
   {
     "id": "so-1",
     "name": "Shipping order (中文)",
     "sender": "宏昌五金股份有限公司"
-  },
-  {
-    "id": "so-2",
-    "name": "Shipping order (中文)",
-    "sender": "華聯塑膠股份有限公司"
   }
 ]

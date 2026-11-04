@@ -23,9 +23,11 @@ const COLS = [
 const ROW_H = 16;
 const FIRST_TOP = 262, NEXT_TOP = 82, BOTTOM = 760;
 
-export async function erpPl(seed: number, opts: { rows?: number; name?: string } = {}) {
+/** `shipper`: another document's seed, so both come from the same company (company() is the first draw). */
+export async function erpPl(seed: number, opts: { rows?: number; name?: string; shipper?: number } = {}) {
   const r = rng(seed);
-  const shipper = company(r), consignee = company(r);
+  const own = company(r);
+  const shipper = opts.shipper == null ? own : company(rng(opts.shipper)), consignee = company(r);
   const pol = r.pick(PORTS.pol), pod = r.pick(PORTS.pod);
   const v = vessel(r);
   const docDate = date(r), etd = date(r);

@@ -14,11 +14,11 @@ import { memoryStore, seed } from "../src/profiles/loop.ts";
 import type { Sample, Saved } from "../src/server/app.ts";
 
 const OUT = "eval/samples";
+// pl-1 and pl-2 share a sender: the first is reviewed, the second is checked and approved automatically.
 const SAMPLES = [
-  { id: "pl-1", name: "Packing list (ERP, 2 pages)", make: () => erpPl(101) },
-  { id: "pl-2", name: "Packing list (ERP)", make: () => erpPl(102, { rows: 12 }) },
+  { id: "pl-1", name: "Packing list 1 (2 pages)", make: () => erpPl(101) },
+  { id: "pl-2", name: "Packing list 2, same sender", make: () => erpPl(102, { rows: 12, shipper: 101 }) },
   { id: "so-1", name: "Shipping order (中文)", make: () => cjkSo(201) },
-  { id: "so-2", name: "Shipping order (中文)", make: () => cjkSo(202) },
 ];
 
 process.loadEnvFile(".dev.vars");

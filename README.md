@@ -4,7 +4,11 @@
 
 Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand: 30–60 minutes per document, and every sender uses its own layout. Fobby Connect reads them with Meta's Muse Spark into one fixed schema, checks the numbers with code and every value with a second system, and learns each sender's layout from the clerk's corrections with Muse Wonder, so the next document from that sender needs less review, or none: a known sender's document that passes every check is approved and sent on without a person.
 
-Live demo: https://connect.fobby.io (open a sample shipment, or upload your own PDF). The screen is in English; it reads Chinese and English documents.
+Live demo: https://connect.fobby.io. The screen is in English; it reads Chinese and English documents. No PDF of your own? Upload these synthetic ones (invented companies), in this order:
+
+1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender: it goes to review. Check it against the PDF and approve.
+2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout: every value is checked, and it is approved without review.
+3. [Shipping order](eval/samples/so-1.pdf), in Chinese, from another sender.
 
 ## How it works
 
@@ -32,7 +36,7 @@ npx -y pnpm@12.16.1 build:web
 npx tsx src/server/local.ts      # http://localhost:8787
 ```
 
-Tests: `npx tsc --noEmit && npx vitest run`. Sample shipments: `npx tsx scripts/build-samples.ts` (synthetic documents, invented companies).
+Tests: `npx tsc --noEmit && npx vitest run`. Sample PDFs: `npx tsx scripts/build-samples.ts`.
 
 ## Meta models used
 

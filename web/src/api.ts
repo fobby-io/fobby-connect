@@ -27,7 +27,6 @@ export type Doc = {
     pages: { page_no: number; route: "text" | "vision"; output: Page }[]; findings: Finding[];
   };
 };
-export type Sample = { id: string; name: string; sender: string };
 // What src/server/webhook.ts records for one POST to a receiver.
 export type Delivery = {
   id: string; event: string; name: string; url: string; at: string;

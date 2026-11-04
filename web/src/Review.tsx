@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { creditText, errorMessage, isCreditExhausted, PASS, post, reasonText, request, WRONG, type Doc, type NormDoc } from "./api.ts";
-import { Busy, ErrorText, SAMPLE_LEAD, Samples, ViaEmail } from "./App.tsx";
+import { Busy, ErrorText, ViaEmail } from "./App.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -19,8 +19,8 @@ type V = { v: string | null; raw: string | null };
 const SECTION = "mb-4 gap-0 rounded-2xl p-[18px] shadow-none";
 const LINK = "h-auto p-0 text-[13px] underline";
 
-export function Review({ doc, onApproved, onOpen }: {
-  doc: Doc; onApproved: (d: Doc) => void; onOpen: (d: Doc) => void;
+export function Review({ doc, onApproved }: {
+  doc: Doc; onApproved: (d: Doc) => void;
 }) {
   useLang();
   const L = labels();
@@ -89,7 +89,7 @@ export function Review({ doc, onApproved, onOpen }: {
   if (approval)
     return (
       <Busy title={t("沒有存成功", "Not saved")}>
-        <ErrorText error={approval.error} onOpen={onOpen} />
+        <ErrorText error={approval.error} />
         <div className="mt-4"><Button variant="outline" onClick={() => setApproval(null)}>{t("回到檢查與修正", "Back to review")}</Button></div>
       </Busy>
     );
@@ -195,7 +195,7 @@ export function Review({ doc, onApproved, onOpen }: {
         <MapCard key={current} page={answer[current]!} current={current} warnCols={warnCols} pageTabs={pageTabs}
           changed={(ci) => colChanged(orig, answer, current, ci)}
           onRewire={(ci, field) => { update((a) => { a[current]!.columns[ci]!.field = field as Page["columns"][number]["field"]; }); void refresh(); }}>
-          <MissingColumn docId={doc.id} page={current} answerPage={answer[current]!} onOpen={onOpen}
+          <MissingColumn docId={doc.id} page={current} answerPage={answer[current]!}
             onRead={(output) => { update((a) => { a[current] = output; }); setOpenRow(null); void refresh(); }} />
         </MapCard>
       ) : (
@@ -470,8 +470,8 @@ function MapCard({ page: p, current, warnCols, pageTabs, changed, onRewire, chil
 }
 
 // A printed column the read left out: the clerk names it, the server re-reads this page with that hint.
-function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
-  docId: string; page: number; answerPage: Page; onRead: (output: Page) => void; onOpen: (d: Doc) => void;
+function MissingColumn({ docId, page, answerPage, onRead }: {
+  docId: string; page: number; answerPage: Page; onRead: (output: Page) => void;
 }) {
   useLang();
   const L = labels();
@@ -489,7 +489,7 @@ function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
       setMsg(null);
       onRead(j.output);
     } catch (e) {
-      setMsg(isCreditExhausted(e) ? <span className="block w-full">{creditText()}<span className="mt-2 block"><Samples onOpen={onOpen} lead={SAMPLE_LEAD()} /></span></span> : errorMessage(e));
+      setMsg(isCreditExhausted(e) ? creditText() : errorMessage(e));
     }
     setBusy(false);
   };

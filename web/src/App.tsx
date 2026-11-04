@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type Sample, type SenderInfo } from "./api.ts";
+import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type SenderInfo } from "./api.ts";
 import { Approved, PdfPanel, useApproved } from "./Approved.tsx";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
@@ -71,13 +71,13 @@ export function App() {
   }
 
   let body: ReactNode = null;
-  if (route.area === "docs") body = <Documents onFile={upload} onOpen={show} />;
+  if (route.area === "docs") body = <Documents onFile={upload} />;
   else if (route.area === "vendors") body = <Vendors />;
   else if (route.area === "flow") body = <Flow />;
   else if (screen?.kind === "busy") body = <><Steps at={screen.step} /><Busy title={screen.title}>{screen.text}</Busy></>;
   else if (screen?.kind === "failed")
-    body = <Busy title={screen.title}><ErrorText error={screen.error} onOpen={show} /><div className="mt-4"><Button variant="outline" onClick={() => { go(""); setRoute({ area: "docs" }); }}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
-  else if (screen?.kind === "review") body = <><Steps at={3} doc={screen.doc} /><Review key={screen.doc.id} doc={screen.doc} onOpen={show} onApproved={show} /></>;
+    body = <Busy title={screen.title}><ErrorText error={screen.error} /><div className="mt-4"><Button variant="outline" onClick={() => { go(""); setRoute({ area: "docs" }); }}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
+  else if (screen?.kind === "review") body = <><Steps at={3} doc={screen.doc} /><Review key={screen.doc.id} doc={screen.doc} onApproved={show} /></>;
   else if (screen?.kind === "result") body = <><div className="mx-auto max-w-[64rem]"><Steps at={5} doc={screen.doc} /></div><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
 
   const area = route.area === "doc" ? "docs" : route.area;
@@ -134,56 +134,9 @@ export function Busy({ title, children }: { title: string; children?: ReactNode 
   );
 }
 
-// Every API error is shown; running out of demo credit points at the samples, which cost nothing.
-export function ErrorText({ error, onOpen }: { error: unknown; onOpen: (d: Doc) => void }) {
+export function ErrorText({ error }: { error: unknown }) {
   useLang();
-  if (isCreditExhausted(error)) return <div><p className="mb-3">{creditText()}</p><Samples onOpen={onOpen} lead={SAMPLE_LEAD()} /></div>;
-  return <span>{errorMessage(error)}</span>;
-}
-
-export const SAMPLE_LEAD = () => t("可以先打開已經讀好的範例貨件：", "You can open a sample shipment, already read, instead:");
-
-/** Sample shipments are demo data a host may or may not carry; with none, this shows nothing. */
-export function Samples({ onOpen, given, lead }: { onOpen: (d: Doc) => void; given?: Sample[]; lead?: string }) {
-  useLang();
-  const [fetched, setList] = useState<Sample[] | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [opening, setOpening] = useState<string | null>(null);
-  useEffect(() => { if (!given) api<Sample[]>("/api/samples").then(setList, () => setList([])); }, [given]);
-  const list = given ?? fetched;
-  if (!list?.length) return null;
-  const open = async (s: Sample) => {
-    setOpening(s.id);
-    setError(null);
-    try {
-      onOpen(await api<Doc>(`/api/samples/${s.id}/open`, { method: "POST" }));
-    } catch (e) {
-      setError(e);
-      setOpening(null);
-    }
-  };
-  return (
-    <div className="text-left">
-      {lead && <p className="mb-2">{lead}</p>}
-      <ul className="m-0 grid list-none gap-2 p-0">
-        {list.map((s) => (
-          <li key={s.id}>
-            <button type="button" disabled={!!opening} onClick={() => open(s)} aria-busy={opening === s.id}
-              className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-white/70 px-3 py-2.5 text-left text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60">
-              <DocIcon so={/shipping order/i.test(s.name)} />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">{s.name}</span>
-                <span className="block truncate text-[13px] text-muted-foreground">{opening === s.id ? t("讀取並核對中…", "Opening and checking…") : s.sender}</span>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
-                className="flex-none text-primary transition-transform group-hover:translate-x-0.5"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {error != null && <p className="mt-2 text-sm text-destructive" role="alert">{errorMessage(error)}</p>}
-    </div>
-  );
+  return <span>{isCreditExhausted(error) ? creditText() : errorMessage(error)}</span>;
 }
 
 export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
@@ -229,7 +182,7 @@ export function ViaEmail({ doc }: { doc: Doc }) {
 
 export const when = (iso: string) => (iso ? new Date(iso).toLocaleString(t("zh-TW", "en-US"), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 
-function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: Doc) => void }) {
+function Documents({ onFile }: { onFile: (f: File) => void }) {
   useLang();
   const { DOC_TYPE } = labels();
   const input = useRef<HTMLInputElement>(null);
@@ -238,10 +191,8 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<"all" | "review" | "done">("all");
   const [intake, setIntake] = useState<string | null>(null);
-  const [samples, setSamples] = useState<Sample[]>([]);
   useEffect(() => {
     api<ListedDoc[]>("/api/documents").then(setList, setError);
-    api<Sample[]>("/api/samples").then(setSamples, () => setSamples([]));
     api<{ intake: string | null }>("/api/flow").then((f) => setIntake(f.intake), () => setIntake(null));
   }, []);
   const toReview = list?.filter((d) => d.status === "review") ?? [];
@@ -254,7 +205,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
 
   return (
     <div className="mx-auto grid max-w-[80rem] grid-cols-[minmax(0,1fr)] gap-5">
-      <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5", samples.length ? "min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]" : "min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]")}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <Card className={panel}>
           <div className="mb-3 flex items-center gap-2">
             <Icon d={ICON.inbox} />
@@ -301,17 +252,6 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
             {over ? t("放開就開始讀取", "Release to read it") : intake ? <>{t("或把 PDF 拖到這裡，或寄到 ", "or drop a PDF here, or email it to ")}<span className="font-medium text-foreground select-all">{intake}</span></> : t("或把 PDF 拖到這裡", "or drop a PDF here")}
           </p>
         </section>
-
-        {/* Only a demo host carries samples; a team's own site shows its documents and nothing else. */}
-        {samples.length > 0 && (
-          <Card className={panel}>
-            <div className="mb-3 flex items-center gap-2">
-              <Icon d={ICON.spark} />
-              <h2 className="text-base font-semibold">{t("範例貨件", "Sample shipments")}</h2>
-            </div>
-            <Samples onOpen={onOpen} given={samples} />
-          </Card>
-        )}
       </div>
 
       <Card className="gap-0 px-5 pt-4 pb-2">
