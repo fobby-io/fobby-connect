@@ -37,6 +37,13 @@ describe("checks", () => {
     expect(checkDocument([page(["@10\n50", "36"], "86")])).toEqual([]);
     expect(checkDocument([page(["5", "36"], "86")])[0]?.message).toMatch(/41 pkg_qty.*86/);
   });
+
+  it("checks the container number inside a cell that also prints the seal", () => {
+    const box = [0, 0, 1, 1] as [number, number, number, number];
+    const withNo = (v: string) => ({ ...page([], null), containers: [{ number: { v, box }, size_type: null, seal_no: null }] }) as unknown as Page;
+    expect(checkDocument([withNo("CSQU3054383 / EMC7585259")])).toEqual([]);
+    expect(checkDocument([withNo("CSQU3054384 / EMC7585259")])[0]?.message).toMatch(/ISO 6346/);
+  });
 });
 
 describe("runDocument", () => {

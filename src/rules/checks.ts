@@ -80,8 +80,10 @@ export function checkDocument(pages: Page[], n = normalize(pages)): Finding[] {
 
   pages.forEach((p, i) => {
     p.containers.forEach((c, j) => {
-      if (c.number?.v && !isValidContainerNo(c.number.v))
-        out.push({ page: i + 1, path: `header.containers[${j}].number`, message: `container number ${c.number.v} fails the ISO 6346 check digit` });
+      // Many layouts print "CNTR / SEAL" in one cell: the number is the part shaped like one.
+      const no = c.number?.v?.match(/[A-Z]{3}[UJZ][\s-]?\d{6}[\s-]?\d/i)?.[0] ?? c.number?.v;
+      if (no && !isValidContainerNo(no))
+        out.push({ page: i + 1, path: `header.containers[${j}].number`, message: `container number ${no} fails the ISO 6346 check digit` });
     });
   });
   return out;
