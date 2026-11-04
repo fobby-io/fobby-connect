@@ -49,7 +49,8 @@ createServer(async (req, res) => {
         res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
         return res.end(existsSync(fileURLToPath(new URL("index.html", DIST))) ? "not found" : "web/dist/ is missing: run npm run build:web");
       }
-      res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
+      // index.html names the hashed bundle, so it is checked every time; otherwise a rebuild is not seen until a hard reload.
+      res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream", ...(path.endsWith(".html") ? { "cache-control": "no-cache" } : {}) });
       return res.end(readFileSync(path));
     }
     const hasBody = req.method !== "GET" && req.method !== "HEAD";

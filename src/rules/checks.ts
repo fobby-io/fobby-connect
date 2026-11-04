@@ -21,6 +21,7 @@ const SUMS = [["pkg_qty", "total_pkgs"], ["qty", "total_qty"], ["gw_kg", "total_
 /** Row sums against the printed totals line, across all pages; container numbers by ISO 6346 check digit. */
 export function checkDocument(pages: Page[]): Finding[] {
   const out: Finding[] = [];
+  const n = normalize(pages);
   for (const [field, total] of SUMS) {
     const printed = pages.map((p, i) => ({ i, v: p.totals[total]?.v })).find((t) => t.v);
     if (!printed) continue;
@@ -28,7 +29,11 @@ export function checkDocument(pages: Page[]): Finding[] {
     if (want === null) continue;
     let sum = new Decimal(0), seen = false;
     const pagesWithRows: number[] = [];
-    pages.forEach((p, i) => {
+    // Cartons come from the rows as the table shows them: a cell like "244 CTNS\n36CTN/6PLT" has its count on the first line.
+    if (field === "pkg_qty") for (const r of n.rows) if (r.pkgs.v && pages[r.page - 1]!.columns.some((c) => c.field === "pkg_qty")) {
+      sum = sum.plus(r.pkgs.v); seen = true; if (!pagesWithRows.includes(r.page - 1)) pagesWithRows.push(r.page - 1);
+    }
+    if (field !== "pkg_qty") pages.forEach((p, i) => {
       const c = p.columns.findIndex((col) => col.field === field);
       if (c < 0) return;
       for (const r of p.rows) {
@@ -53,7 +58,6 @@ export function checkDocument(pages: Page[]): Finding[] {
       out.push({ page: s.i + 1, path: `header.${k}`, message: `${k} differs between pages: page ${first!.i + 1} has ${first!.val}, page ${s.i + 1} has ${s.val}` });
   }
 
-  const n = normalize(pages);
   const pallets = n.rows.reduce((a, r) => a + Number(r.pallets.v ?? 0), 0);
   const totalPlt = n.totals.total_pallets?.v;
   if (totalPlt && pallets && pallets !== Number(totalPlt)) {

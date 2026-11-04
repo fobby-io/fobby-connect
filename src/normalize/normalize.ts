@@ -101,8 +101,11 @@ export function normalize(pages: Page[]): NormDoc {
       const pr = col(r.cells, "pallet_range");
       const pm = pr?.match(/(\d+)\s*[-~]\s*(\d+)/) ?? pr?.match(/(\d+)/);
       const pkgCell = col(r.cells, "pkg_qty");
-      const pkgs = (pkgCell && parseNumber(lines(pkgCell)[0]!)) ?? (from && to ? String(Number(to) - Number(from) + 1) : null);
-      const plts = [...r.cells.filter(Boolean).join(" ").matchAll(/(\d+)\s*PLTS?\b/gi)].map((x) => Number(x[1]));
+      // "@10\n50" is per pallet over the row's count; "244 CTNS\n36CTN/6PLT" is the count over its pallet split.
+      const pkgLine = lines(pkgCell).find((l) => !l.startsWith("@"));
+      const pkgs = (pkgLine && parseNumber(pkgLine)) ?? (from && to ? String(Number(to) - Number(from) + 1) : null);
+      // "36CTN/3PLT" or "(1PLT)" counts pallets; "LOT#2640804-3 PLT#M1-M3" is a lot number then pallet marks, not 3 pallets.
+      const plts = [...r.cells.filter(Boolean).join(" ").matchAll(/(?<![\w-])(\d+)\s*PLTS?\b(?!\s*#)/gi)].map((x) => Number(x[1]));
       const qtyCell = col(r.cells, "qty");
       const qtyRaw = rowTotal(qtyCell);
       const unit = (qtyRaw?.match(/[A-Z]{2,}/i)?.[0] ?? label("qty").match(/\(([A-Z]+)\)/i)?.[1] ?? null)?.toUpperCase() ?? null;

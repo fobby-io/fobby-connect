@@ -103,7 +103,8 @@ export function createApp(deps: Deps) {
     await db.putDoc(await space(), { ...listed(d), prompt_version_id: d.run.prompt?.id ?? null, template_hash: d.run.template_hash ?? null, model: d.run.model ?? null });
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
-  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
+  // Findings are worked out again, like the normalized values, so the page agrees with the checks as they are now.
+  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, findings: checkDocument(d.run.pages.map((p) => p.output)), prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
   // Every paid action (a read, a column re-read, a corrected approval) counts against one daily cap for all spaces.
   async function spend(_kind: "read" | "column" | "learn") {

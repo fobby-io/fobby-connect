@@ -404,14 +404,20 @@ function RawRow({ page, ri, before, onChange, onDone }: {
   useLang();
   const L = labels();
   const r = page.rows[ri]!;
+  // One printed cell can feed several table columns; name them all so a value is found where it is fixed.
+  const also: Record<string, string> = {
+    pkg_qty: t("、板數（「3PLT」）", ", pallets (\"3PLT\")"), qty: t("、每箱數量（「@」那行）", ", qty per carton (the \"@\" line)"),
+    description: t("、料號、稅則、批號、PO", ", part no., HS code, lot, PO"),
+  };
   return (
     <div onClick={(e) => e.stopPropagation()}>
+      <p className="mb-2 text-xs text-muted-foreground">{t("這一列印在文件上的原文。改這裡，上面表格的值會跟著重算。", "This row as printed. Correct the text here and the values in the table are worked out again.")}</p>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-x-3.5 gap-y-2.5">
         {page.columns.map((c, ci) => {
           const label = c.label.replace(/\n/g, " ");
           return (
             <div key={ci} className={cn((c.field === "description" || c.field === "marks") && "col-span-2")}>
-              <label className="mb-0.5 block text-xs text-muted-foreground">{t(`「${label}」→ `, `"${label}" → `)}{L.FIELD[c.field] ?? c.field}</label>
+              <label className="mb-0.5 block text-xs text-muted-foreground">{t(`「${label}」→ `, `"${label}" → `)}{L.FIELD[c.field] ?? c.field}{also[c.field] ?? ""}</label>
               <RawEditor value={r.cells[ci] ?? null} before={before(ci)} label={t(`${c.label} 原文`, `${c.label} printed text`)} autoFocus={false}
                 onChange={(x) => onChange(ci, x)} onDone={onDone} />
             </div>

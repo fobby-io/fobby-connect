@@ -48,6 +48,17 @@ describe("normalize", () => {
     expect([r.pallet_from.v, r.pallet_to.v, r.pallets.v]).toEqual(["1", "3", null]);
   });
 
+  it("counts pallets per row from the packages cell, not from a lot number followed by pallet marks", () => {
+    const rows = [
+      ["1-108", "108 CTNS 36CTN/3PLT", "PN:004617-41\nLOT#2640804-3 PLT#M1-M3", "@5,800 PCS\n626,400 PCS", "1,704.24", "1,747.44"],
+      ["1-244", "244 CTNS\n36CTN/6PLT\n28CTN/1PLT", "LOT#2643018-4~6 PLT#S1-S7", "@525 PCS\n128,100 PCS", "3,974.76", "4,072.36"],
+    ];
+    const pages = [page({ rows, totals: { total_pkgs: "352 CTNS (ON 10 PLT)" } })];
+    expect(normalize(pages).rows.map((r) => [r.pkgs.v, r.pallets.v])).toEqual([["108", "3"], ["244", "7"]]);
+    // The carton sum uses the same count, so the stacked "28CTN/1PLT" line is not read as the row's cartons.
+    expect(checkDocument(pages).filter((f) => /pkg_qty|pallets/.test(f.message))).toEqual([]);
+  });
+
   it("takes the pallet total printed inside the package total", () => {
     const n = normalize([page({ rows: [ROW1], totals: { total_pkgs: "942 CTNS ( 46 PLTS )" } })]);
     expect([n.totals.total_pkgs!.v, n.totals.total_pallets!.v]).toEqual(["942", "46"]);
