@@ -6,7 +6,7 @@ import type { Db } from "./db.ts";
 
 export type MigrationReport = {
   space: string; apply: boolean;
-  source: { documents: number; versions: number; examples: number; usage_today: number };
+  source: { documents: number; versions: number; examples: number; usage_today: number; holds: number };
   database: { documents: number; versions: number; examples: number } | null;
   notes: string[];
 };
@@ -65,10 +65,17 @@ export async function migrateStorage(files: Files, db: Db, o: { apply?: boolean;
   const used = (await files.list(`usage/${today}/`)).length;
   if (apply) for (let i = 0; i < used; i++) await db.spend(today, used);
 
+  // Holds from the single senders.json become one entry per sender, as the app writes them; a newer entry is kept.
+  const holds = Object.entries((await getJson<Record<string, { hold?: boolean }>>("senders.json")) ?? {}).filter(([, h]) => h.hold).map(([s]) => s);
+  if (apply) for (const s of holds) {
+    const key = `${space}/holds/${encodeURIComponent(s)}.json`;
+    if (!(await files.get(key))) await files.put(key, enc.encode(JSON.stringify({ sender: s, hold: true })));
+  }
+
   const after = apply ? await db.loadProfiles(space) : null;
   return {
     space, apply,
-    source: { documents, versions: versions.length, examples: examples.length, usage_today: used },
+    source: { documents, versions: versions.length, examples: examples.length, usage_today: used, holds: holds.length },
     database: after && { documents: (await db.listDocs(space)).length, versions: after.versions.length, examples: after.approved.length },
     notes,
   };

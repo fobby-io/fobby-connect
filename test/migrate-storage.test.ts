@@ -30,6 +30,7 @@ function legacyFiles() {
     approved: ["a", "b", "a"].map((doc_id, i) => ({ doc_id, sender: "ACME", cls: "PL", pages: [[{ type: "text", text: `${doc_id}${i}` }]], answer: [], model: [] })),
   });
   for (const n of [1, 2, 3]) put(`usage/${TODAY}/read-${n}.json`, {});
+  put("senders.json", { ACME: { hold: true }, OTHER: { hold: false } });
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
   return { store, files };
 }
@@ -40,7 +41,7 @@ describe("migrateStorage", () => {
     const db = await pgliteDb();
     const keys = store.size;
     const r = await migrateStorage(files, db, { today: TODAY });
-    expect(r.source).toEqual({ documents: 2, versions: 2, examples: 2, usage_today: 3 });
+    expect(r.source).toEqual({ documents: 2, versions: 2, examples: 2, usage_today: 3, holds: 1 });
     expect(r.database).toBeNull();
     expect(r.notes.join("\n")).toMatch(/gone.*missing/);
     expect(await db.listDocs("s0")).toEqual([]);
@@ -73,12 +74,12 @@ describe("migrateStorage", () => {
     const { files } = legacyFiles();
     const db = await pgliteDb();
     await migrateStorage(files, db, { apply: true, today: TODAY });
-    files.delete("runs/index.json");
+    for (const k of ["runs/index.json", "s0/index/a.json", "profiles.json", "senders.json"]) await files.delete(k);
     const noMeta: MetaClient = async () => { throw new Error("no model call expected"); };
     const app = createApp({ files, db, client: noMeta });
     const docs = await (await app.fetch(new Request("http://x/api/documents"))).json() as { id: string }[];
     expect(docs.map((d) => d.id)).toEqual(["a", "b"]);
-    const senders = await (await app.fetch(new Request("http://x/api/senders"))).json() as { sender: string; approved: { count: number }[] }[];
-    expect(senders.find((s) => s.sender === "ACME")?.approved[0]?.count).toBe(2);
+    const senders = await (await app.fetch(new Request("http://x/api/senders"))).json() as { sender: string; hold: boolean; approved: { count: number }[] }[];
+    expect(senders.find((s) => s.sender === "ACME")).toMatchObject({ hold: true, approved: [{ count: 2 }] });
   });
 });

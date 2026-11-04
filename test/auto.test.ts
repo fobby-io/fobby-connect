@@ -79,13 +79,11 @@ describe("second system and automatic approval", () => {
     expect(list.map((d: { status: string }) => d.status)).toEqual(["auto", "approved"]);
   });
 
-  it("keeps every document in the list when several arrive at once, and still lists ones from the old single list", async () => {
+  it("keeps every document in the list when several arrive at once", async () => {
     const t = setup(jev().decide);
-    t.store.set("runs/index.json", new TextEncoder().encode(JSON.stringify([{ id: "old1", name: "old", sender: null, cls: "PL", status: "review", created_at: "2026-11-01T00:00:00Z", flagged: null, reopened: false }])));
     const opened = await Promise.all([1, 2, 3, 4, 5].map(() => t.open()));
     const list = await t.call("/api/documents");
-    expect(list.map((d: { id: string }) => d.id).sort()).toEqual([...opened.map((d) => d.id), "old1"].sort());
-    expect(list.at(-1).id).toBe("old1");
+    expect(list.map((d: { id: string }) => d.id).sort()).toEqual(opened.map((d) => d.id).sort());
   });
 
   it("holds a sender after a reopened document until one passes review unchanged", async () => {

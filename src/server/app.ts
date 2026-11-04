@@ -18,7 +18,7 @@ import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
-/** Keys: runs/<id>.pdf|json, space.json, <space>/index/<id>.json, <space>/holds/<sender>.json, profiles.json, flow.json, samples/index.json, samples/<id>.pdf|json; runs/index.json and senders.json are read from older data only. */
+/** Keys: runs/<id>.pdf|json, examples/<doc_id>.json, prompts/<hash>.json, space.json, <space>/holds/<sender>.json, flow.json, samples/index.json, samples/<id>.pdf|json. The rest lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
 /** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]>; delete(key: string): Promise<void> };
 /** One email the host sends for an email output of the flow. Throws when the host refuses or fails to send it. */
@@ -92,10 +92,7 @@ export function createApp(deps: Deps) {
     (await Promise.all((await files.list(prefix)).map((k) => getJson<T>(k)))).filter((x): x is Awaited<T> & {} => x != null);
   const docList = async (): Promise<ListedDoc[]> => {
     const own: ListedDoc[] = (await db.listDocs(await space())).map(({ id, name, sender, cls, status, created_at, flagged, reopened }) => ({ id, name, sender, cls, status, created_at, flagged, reopened }));
-    const ids = new Set(own.map((d) => d.id));
-    // Documents listed before the per-document entries existed are still read from the old single list.
-    const old = ((await getJson<ListedDoc[]>("runs/index.json")) ?? []).filter((d) => !ids.has(d.id));
-    return [...own, ...old].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return own.sort((a, b) => b.created_at.localeCompare(a.created_at));
   };
   // The run JSON first: a row in the list always has its document.
   const save = async (d: Saved) => {
@@ -142,7 +139,7 @@ export function createApp(deps: Deps) {
 
   const senderState = async (): Promise<SenderState> => {
     const own = await entries<{ sender: string; hold: boolean }>(`${await space()}/holds/`);
-    return { ...((await getJson<SenderState>("senders.json")) ?? {}), ...Object.fromEntries(own.map((h) => [h.sender, { hold: h.hold }])) };
+    return Object.fromEntries(own.map((h) => [h.sender, { hold: h.hold }]));
   };
   const setHold = async (sender: string, hold: boolean) => {
     if (!!(await senderState())[sender]?.hold === hold) return;
