@@ -5,7 +5,6 @@ import { createServer } from "node:http";
 import { dirname, extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { renderPageAsImage } from "unpdf";
 import { cachedClient } from "../../eval/cache.ts";
 import { metaClient } from "../gateway/meta-client.ts";
 import { createApp, type Files } from "./app.ts";
@@ -43,17 +42,6 @@ createServer(async (req, res) => {
       }
       res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
       return res.end(readFileSync(path));
-    }
-    // shortcut: page images rendered on the server need a native canvas, so only the local host has them; react-ui UI-1.3 removes this.
-    const png = url.pathname.match(/^\/api\/documents\/([\w-]+)\/pages\/(\d+)\.png$/);
-    if (req.method === "GET" && png) {
-      const out = join(DATA, "runs", `${png[1]}-p${png[2]}.png`);
-      if (!existsSync(out)) {
-        const img = await renderPageAsImage(new Uint8Array(readFileSync(join(DATA, "runs", `${png[1]}.pdf`))), Number(png[2]), { canvasImport: () => import("@napi-rs/canvas"), scale: 1.5 });
-        writeFileSync(out, Buffer.from(img));
-      }
-      res.writeHead(200, { "content-type": "image/png" });
-      return res.end(readFileSync(out));
     }
     const hasBody = req.method !== "GET" && req.method !== "HEAD";
     const r = await app.fetch(new Request(url, {

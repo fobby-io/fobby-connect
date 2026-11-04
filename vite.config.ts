@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // vitest also reads this file; its tests live under test/, so the web root applies only to vite itself.
-// Root is web/src because web/index.html is still the old page until the new one is accepted.
 export default defineConfig(
   process.env.VITEST
     ? {}
