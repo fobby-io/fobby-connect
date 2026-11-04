@@ -94,8 +94,6 @@ export function Flow() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">{t("出口流程", "Export flow")}</h1>
-          <p className="max-w-[820px] text-muted-foreground">{t("整個團隊一條流程。確認後的資料依寄件公司分支，每家可以接不同出口：Webhook 進自己的系統、Webhook 進別人的系統、Email 或下載。節點可以拖動，點一下設定。",
-            "One flow for the team. Approved data branches by sender, and each sender can feed different outputs: a webhook into your own system, a webhook into someone else's, email or download. Drag nodes; click one to set it up.")}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">{t("新增出口：", "Add output: ")}</span>
@@ -117,15 +115,15 @@ export function Flow() {
 }
 
 const kindName = (k: Kind) => ({
-  intake: t("收件", "Received"), read: t("第一系統讀取", "First read"), check: t("第二系統核對", "Second check"), approve: t("確認", "Approved"),
+  intake: t("收件", "Received"), read: t("讀取", "Read"), check: t("核對", "Check"), approve: t("確認", "Approved"),
   switch: t("依寄件公司分支", "Branch by sender"), branch: t("廠商", "Sender"), webhook: "Webhook", email: "Email", download: t("下載", "Download"),
 })[k];
 const sub = (n: Node, host: Host) => {
   switch (n.kind) {
     case "intake": return host.intake ? t(`上傳 PDF・寄到 ${host.intake}`, `PDF upload, or email to ${host.intake}`) : t("上傳 PDF", "PDF upload");
-    case "read": return t("Meta 模型讀出每個欄位", "Meta model reads every field");
-    case "check": return t("Jev 逐一核對（認得的廠商）", "Jev checks each value (known senders)");
-    case "approve": return t("全部通過自動確認，否則人工", "Automatic when all pass, else a person");
+    case "read": return t("每個欄位", "Every field");
+    case "check": return t("每個值（認得的廠商）", "Every value (known senders)");
+    case "approve": return t("全部通過就自動", "Automatic if all pass");
     case "switch": return t("寄件公司 =", "Sender =");
     case "branch": return n.sender === OTHER ? t("其他所有廠商", "Every other sender") : n.sender!;
     case "webhook": return n.url ? n.name ?? "" : t(`${n.name ?? ""}（未設定網址）`, `${n.name ?? ""} (no URL yet)`);
@@ -228,42 +226,44 @@ function Inspector({ g, host, node, secret, onPatch, onRemove, onAutoSend }: {
     <Card className={cn(SECTION, "mb-0")}>
       <label className="mb-4 flex items-start gap-2 text-sm">
         <input type="checkbox" className="mt-1" checked={g.autoSend} onChange={(e) => onAutoSend(e.target.checked)} />
-        <span><b>{t("確認後直接送出（人工確認和自動確認都算）", "Send as soon as a document is approved, by a person or automatically")}</b><br />
-          <span className="text-muted-foreground">{t("關掉的話，確認後的文件等人在文件頁按「送到 Webhook」。", "When off, approved documents wait for someone to press Send to webhooks on the document page.")}</span></span>
+        <span className="font-medium">{t("確認後自動送出", "Send on approval")}</span>
       </label>
-      {!node && <p className="text-sm text-muted-foreground">{t("點流程圖上的節點來設定。選一家廠商再按「新增出口」，出口會接在那家下面。", "Click a node to set it up. Select a sender, then Add output to attach it there.")}</p>}
+      {!node && <p className="text-sm text-muted-foreground">{t("選一個節點來設定。", "Select a node to set it up.")}</p>}
       {node && (
         <>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-base font-bold">{kindName(node.kind)}</h2>
             {OUTPUTS.includes(node.kind) && !live(node.kind, host) && <Badge variant="secondary" className="rounded-full">{t("這個伺服器沒有設定寄信", "No mail set up on this server")}</Badge>}
           </div>
-          {node.kind === "branch" && <p className="text-sm">{node.sender === OTHER ? t("沒有自己分支的廠商都走這裡。", "Senders without their own branch go here.") : t(`寄件公司是 ${node.sender} 的文件走這條。`, `Documents from ${node.sender} go this way.`)}</p>}
+          {node.kind === "branch" && <p className="text-sm">{node.sender === OTHER ? t("其他所有廠商", "Every other sender") : node.sender}</p>}
           {node.kind === "webhook" && (
             <>
               <label className={field}>{t("名稱", "Name")}<Input value={node.name ?? ""} onChange={(e) => onPatch(node.id, { name: e.target.value })} /></label>
               <label className={field}>{t("網址", "URL")}<Input value={node.url ?? ""} placeholder="https://" onChange={(e) => onPatch(node.id, { url: e.target.value })} /></label>
               <TestSend node={node} />
-              <ul className="mb-3 list-disc pl-5 text-[13px] text-muted-foreground">
-                <li>{t("確認後的完整資料（跟下載的 JSON 一樣）用 POST 送出，事件是 document.approved；事後改過再確認的送 document.corrected。", "The approved record (the same JSON as the download) is POSTed as document.approved; one corrected and approved again goes as document.corrected.")}</li>
-                <li>{t("每次都附簽章：X-Fobby-Signature 是 sha256=HMAC(密鑰, 時間戳記.內容)，時間戳記在 X-Fobby-Timestamp。對方可以驗證是我們送的。", "Every delivery is signed: X-Fobby-Signature is sha256=HMAC(secret, timestamp.body), with the timestamp in X-Fobby-Timestamp, so the receiver can verify it came from us.")}</li>
-                <li>{t("對方回 2xx 算送達；回應 JSON 裡的 receipt_id（或 X-Receipt-Id 標頭）記成收據編號。沒送到就自動重試：1 分鐘、5 分鐘、30 分鐘、2 小時後各一次，每次用同一個 delivery id，對方可以靠它去重。", "A 2xx answer counts as delivered; receipt_id in the JSON answer (or an X-Receipt-Id header) is kept as the receipt. A failed delivery is tried again after 1, 5 and 30 minutes and 2 hours, with the same delivery id so the receiver can drop duplicates.")}</li>
-              </ul>
-              <p className="mb-3 text-[13px]">{t("簽章密鑰：", "Signing secret: ")}<code className="break-all select-all">{secret}</code></p>
+              <p className="mb-2 text-[13px]">{t("簽章密鑰：", "Signing secret: ")}<code className="break-all select-all">{secret}</code></p>
+              {/* For whoever builds the receiving end; out of the way for everyone else. */}
+              <details className="mb-3 text-[13px] text-muted-foreground">
+                <summary className="cursor-pointer text-primary">{t("接收端規格", "For developers")}</summary>
+                <ul className="mt-1 list-disc pl-5">
+                  <li>POST JSON · <code>document.approved</code> / <code>document.corrected</code></li>
+                  <li><code>X-Fobby-Signature: sha256=HMAC(secret, timestamp.body)</code>, <code>X-Fobby-Timestamp</code></li>
+                  <li>{t("2xx 算送達；receipt_id 或 X-Receipt-Id 記為收據", "2xx = delivered; receipt_id or X-Receipt-Id kept as receipt")}</li>
+                  <li>{t("失敗重試：1、5、30 分鐘、2 小時，delivery id 不變", "Retries after 1, 5, 30 min and 2 h with the same delivery id")}</li>
+                </ul>
+              </details>
             </>
           )}
           {node.kind === "email" && (
             <>
               <label className={field}>{t("收件人", "Recipient")}<Input type="email" value={node.to ?? ""} placeholder="ops@example.com" onChange={(e) => onPatch(node.id, { to: e.target.value })} /></label>
-              <p className="mb-3 text-[13px] text-muted-foreground">{t("確認後寄一封信：主旨是文件名稱，附件是完整資料（JSON）和明細（CSV）。事後改過再確認的會再寄一次。", "On approval one email goes out: the document name as subject, the full record (JSON) and line items (CSV) attached. A document corrected and approved again is sent again.")}</p>
+              <p className="mb-3 text-[13px] text-muted-foreground">{t("附件：JSON、CSV", "Attached: JSON, CSV")}</p>
             </>
           )}
-          {node.kind === "download" && <p className="text-sm">{t("確認後在文件頁下載 JSON 或 CSV，或複製下載網址。", "After approval, download JSON or CSV on the document page, or copy the download URL.")}</p>}
+          {node.kind === "download" && <p className="text-sm">{t("在文件頁下載 JSON、CSV", "JSON and CSV on the document page")}</p>}
           {!OUTPUTS.includes(node.kind) && node.kind !== "branch" && <p className="text-sm text-muted-foreground">{sub(node, host)}</p>}
           {OUTPUTS.includes(node.kind) && (
             <>
-              <h3 className="mt-2 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h3>
-              <p className="mb-3 text-[13px] text-muted-foreground">{node.kind === "download" ? t("下載不留紀錄。", "Downloads are not logged.") : node.kind === "webhook" ? t("每份文件送出的狀態碼和收據編號，列在那份文件的頁面上。", "Each document's status codes and receipt ids are listed on its page.") : t("每份文件寄出的紀錄，列在那份文件的頁面上。", "Each document's sends are listed on its page.")}</p>
               <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>
             </>
           )}

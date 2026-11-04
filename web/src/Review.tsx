@@ -83,8 +83,7 @@ export function Review({ doc, onApproved, onOpen }: {
   if (approval && "busy" in approval)
     return (
       <Busy title={n ? t("正在學習你的修正…", "Learning your corrections…") : t("存檔中…", "Saving…")}>
-        {n ? t("系統會寫一版新的讀法，並用它重讀這家以前確認過的文件，確定沒有變差才會採用。約 30 秒到 2 分鐘。",
-          "It writes a new way of reading, re-reads this sender's earlier approved documents with it, and keeps it only if nothing got worse. About 30 seconds to 2 minutes.") : ""}
+        {n ? t("約 30 秒到 2 分鐘。", "About 30 seconds to 2 minutes.") : ""}
       </Busy>
     );
   if (approval)
@@ -107,16 +106,9 @@ export function Review({ doc, onApproved, onOpen }: {
   const doubtVals = (v?.pages ?? []).flatMap((pg, pi) => Object.entries(pg.values).filter(([, p]) => p < PASS).map(([key, p]) => ({ pi, key, p })));
   const doubtAt = new Map(doubtCells.map((d) => [`${d.pi}:${d.ri}:${d.col}`, d.p]));
   const doubtKey = new Map(doubtVals.map((d) => [d.key, d.p]));
-  const doubtWord = (p: number) => (p < WRONG ? t("第二系統判定可能讀錯", "the second system says this is likely wrong") : t("第二系統不確定", "the second system is unsure"));
+  const doubtWord = (p: number) => (p < WRONG ? t("可能讀錯", "likely wrong") : t("不確定", "unsure"));
   const issuer = norm.header.shipper?.v ?? ((run.issuer ?? "").split("\n")[0] || t("（沒讀到寄件公司）", "(sender not read)"));
   const sum = (k: string) => norm.rows.reduce((a, r) => a + Number((r as unknown as Record<string, V>)[k]!.v ?? 0), 0);
-  const p0 = run.prompt;
-  const sourceLine = p0?.level === "sender"
-    ? t(`這家已經學過，用它專屬的讀法（第 ${p0.version} 版）。`, `This sender is known; read with its own reading (version ${p0.version}).`)
-    : run.sender
-      ? t(`這家確認過，${run.cls} 的通用讀法就讀得對，還不需要專屬版本。`, `This sender is known and the general ${run.cls} reading reads it right, so it has no own version yet.`)
-    : t(`這家第一次出現，用${p0?.level === "class" ? `${run.cls} 的通用讀法` : "最基本的讀法"}。你確認後，系統會記住這家的格式。`,
-      `First time from this sender; read with ${p0?.level === "class" ? `the general ${run.cls} reading` : "the basic reading"}. Once you approve, it remembers this sender's layout.`);
 
   const pageTabs = run.pages.length > 1 && (
     <div className="mb-2.5 flex flex-wrap gap-1.5">
@@ -137,13 +129,12 @@ export function Review({ doc, onApproved, onOpen }: {
       <section className="mb-4 rounded-2xl border bg-card px-6 py-5">
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex-[1_1_320px]">
-            <h1 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${issuer} 的${L.DOC_TYPE[run.cls ?? ""] ?? "文件"}`, `${L.DOC_TYPE[run.cls ?? ""] ?? "Document"} from ${issuer}`)}</h1>
-            <p className="text-muted-foreground">{t(`共 ${run.pages.length} 頁。`, `${run.pages.length} page${run.pages.length === 1 ? "" : "s"}. `)}{sourceLine}</p>
+            <h1 className="mb-1 text-[22px] font-semibold tracking-tight">{doc.name}</h1>
+            <p className="text-muted-foreground">{L.DOC_TYPE[run.cls ?? ""] ?? t("文件", "Document")} · {t(`${run.pages.length} 頁`, `${run.pages.length} page${run.pages.length === 1 ? "" : "s"}`)}{doc.auto?.reasons.includes("unknown_sender") ? t(" · 新廠商", " · New sender") : ""}</p>
             <ViaEmail doc={doc} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <label htmlFor="sender" className="text-sm font-semibold">{t("寄件公司", "Sender")}</label>
-              <Input id="sender" ref={senderInput} className="w-auto min-w-[240px]" value={sender} onChange={(e) => setSender(e.target.value)} />
-              <span className="text-[13px] text-muted-foreground">{t("系統用這個名字記住這家的格式。", "The layout is remembered under this name.")}</span>
+              <Input id="sender" ref={senderInput} className="w-auto min-w-[240px]" value={sender} placeholder={issuer} onChange={(e) => setSender(e.target.value)} />
             </div>
           </div>
           <div className="flex flex-wrap gap-2.5">
@@ -157,18 +148,18 @@ export function Review({ doc, onApproved, onOpen }: {
         </div>
         {!!doc.auto?.reasons.length && (
           <div className="mt-3.5 rounded-[10px] border px-4 py-3">
-            <h2 className="mb-1 text-[15px] font-bold">{t("為什麼這份要人工審核", "Why this one needs a person")}</h2>
+            <h2 className="mb-1 text-[15px] font-bold">{t("需要審核的原因", "Needs review because")}</h2>
             <ul className="list-disc pl-5 text-sm">{doc.auto.reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}</ul>
           </div>
         )}
         <div className={cn("mt-3.5 rounded-[10px] px-4 py-3", doubtCells.length + doubtVals.length ? "border border-warn-line bg-warn-bg" : v && !v.unchecked_pages ? "bg-ok-bg text-ok" : "border")}>
-          <h2 className="mb-1 text-[15px] font-bold">{t("第二系統核對", "Second check")}</h2>
+          <h2 className="mb-1 text-[15px] font-bold">{t("核對", "Check")}</h2>
           {!v && <p className="text-sm">{doc.auto?.reasons.includes("unknown_sender")
-            ? t("這家的這種文件第一次出現，反正每個值都要你看過，所以不跑第二系統，省下核對費用。你確認後，下一份起每個值都會核對。", "The first document of this kind from this sender: you look over every value anyway, so the second system is not run and its cost is saved. From the next one, every value is checked.")
-            : t("這份沒有經過第二系統核對，每個值都請你看過。", "This document was not checked by the second system; please look over every value.")}</p>}
-          {v && <p className="text-sm">{t(`第二系統（Jev）拿原文${run.pages.some((p) => p.route === "vision") ? "和掃描圖" : ""}逐一核對了 ${v.checked} 個值，`, `The second system (Jev) checked ${v.checked} values against the printed ${run.pages.some((p) => p.route === "vision") ? "text and the scan" : "text"}: `)}
-            {doubtCells.length + doubtVals.length ? t(`${doubtCells.length + doubtVals.length} 個有疑慮，在下面標成橘色。`, `${doubtCells.length + doubtVals.length} doubtful, marked orange below.`) : t("全部通過。", "all passed.")}
-            {v.unchecked_pages ? t(`另有 ${v.unchecked_pages} 頁沒有文字層或核對失敗，請你看過。`, ` ${v.unchecked_pages} page(s) had no text layer or could not be checked; please look them over.`) : ""}</p>}
+            ? t("新廠商不核對，請看過每個值。", "Not checked for a new sender. Look over every value.")
+            : t("沒有核對，請看過每個值。", "Not checked. Look over every value.")}</p>}
+          {v && <p className="text-sm">{t(`核對了 ${v.checked} 個值：`, `${v.checked} values checked: `)}
+            {doubtCells.length + doubtVals.length ? t(`${doubtCells.length + doubtVals.length} 個待確認（橘色）。`, `${doubtCells.length + doubtVals.length} flagged (orange).`) : t("全部通過。", "all passed.")}
+            {v.unchecked_pages ? t(`${v.unchecked_pages} 頁沒有核對到，請看過。`, ` ${v.unchecked_pages} page${v.unchecked_pages === 1 ? "" : "s"} not checked; look ${v.unchecked_pages === 1 ? "it" : "them"} over.`) : ""}</p>}
           {doubtCells.length + doubtVals.length > 0 && (
             <ol className="mt-1.5 list-decimal pl-5 text-sm">
               {doubtVals.map((d) => (
@@ -179,13 +170,13 @@ export function Review({ doc, onApproved, onOpen }: {
                   <Button variant="link" className={cn(LINK, "ml-1.5")} onClick={() => { setCurrent(d.pi); setOpenRow({ page: d.pi, row: d.ri }); }}>{t("打開這一列", "Open this row")}</Button>
                 </li>
               ))}
-              {doubtCells.length > 12 && <li>{t(`還有 ${doubtCells.length - 12} 個，在明細裡標成橘色。`, `${doubtCells.length - 12} more, marked orange in the line items.`)}</li>}
+              {doubtCells.length > 12 && <li>{t(`還有 ${doubtCells.length - 12} 個（明細裡的橘色）`, `${doubtCells.length - 12} more (orange in the line items)`)}</li>}
             </ol>
           )}
         </div>
         {probs.length ? (
           <div className="mt-3.5 rounded-[10px] border border-warn-line bg-warn-bg px-4 py-3">
-            <h2 className="mb-1.5 text-[15px] font-bold text-warn">{t(`需要你確認 ${probs.length} 處`, `${probs.length} thing${probs.length === 1 ? "" : "s"} to check`)}</h2>
+            <h2 className="mb-1.5 text-[15px] font-bold text-warn">{t(`${probs.length} 個檢查沒過`, `${probs.length} check${probs.length === 1 ? "" : "s"} failed`)}</h2>
             <ol className="list-decimal pl-5">
               {probs.map((p) => (
                 <li key={p.text} className="my-1">{p.text}{t("。", ".")}
@@ -193,12 +184,10 @@ export function Review({ doc, onApproved, onOpen }: {
                 </li>
               ))}
             </ol>
-            <p className="mt-2 text-[13px] text-muted-foreground">{t("標橘色的是相關欄位。點那一列可以看到原文並修改；如果原本就對（例如合計本來就含棧板重量），直接確認即可。",
-              "Orange marks the fields involved. Click the row to see the printed text and edit it; if it was right all along (say, the total already includes pallet weight), just approve.")}</p>
+            <p className="mt-2 text-[13px] text-muted-foreground">{t("原本就對的話，直接確認。", "If it was right all along, just approve.")}</p>
           </div>
         ) : (
-          <div className="mt-3.5 rounded-[10px] bg-ok-bg px-4 py-3 text-ok">{t("自動核對全部通過：加總、板數、嘜頭上的 PO、各頁抬頭都一致。快速看過一遍沒問題就可以確認。",
-            "All automatic checks passed: sums, pallet count, PO in the marks and the header on every page agree. A quick look over and you can approve.")}</div>
+          <div className="mt-3.5 rounded-[10px] bg-ok-bg px-4 py-3 text-ok">{t("檢查全部通過（加總、板數、PO、各頁抬頭）。", "All checks passed (sums, pallets, PO, page headers).")}</div>
         )}
       </section>
 
@@ -213,17 +202,15 @@ export function Review({ doc, onApproved, onOpen }: {
         // Nothing failed: the mapping is one line, so the header and line items are on the first screen.
         <Card className={cn(SECTION, "flex-row flex-wrap items-center gap-3")}>
           <h2 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h2>
-          <span className="text-[13px] text-muted-foreground">{t(`第 ${current + 1} 頁 ${answer[current]!.columns.length} 個印出來的欄位都已對應。`, `All ${answer[current]!.columns.length} printed columns on page ${current + 1} are mapped.`)}</span>
-          <Button variant="link" className={LINK} onClick={() => setShowMap(true)}>{t("展開查看或修改", "Show or change")}</Button>
+          <span className="text-[13px] text-muted-foreground">{t(`${answer[current]!.columns.length} 欄全部對應`, `All ${answer[current]!.columns.length} columns mapped`)}</span>
+          <Button variant="link" className={LINK} onClick={() => setShowMap(true)}>{t("修改", "Change")}</Button>
         </Card>
       )}
 
       <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 min-[1101px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
         <Card className={cn(SECTION, "min-[1101px]:sticky min-[1101px]:top-3")}>
           {pageTabs}
-          <PageViewer docId={doc.id} pageNos={run.pages.map((p) => p.page_no)} current={current} box={openPage} />
-          <p className="mt-2 text-[13px] text-muted-foreground">{t("點右邊的明細列，原頁會跳到那一頁並框出位置。", "Click a line item on the right; the page jumps there and outlines it.")}</p>
-        </Card>
+          <PageViewer docId={doc.id} pageNos={run.pages.map((p) => p.page_no)} current={current} box={openPage} />        </Card>
 
         <div>
           <Card className={SECTION}>
@@ -320,7 +307,7 @@ export function Review({ doc, onApproved, onOpen }: {
       <div className="fixed inset-x-0 bottom-0 z-10 flex flex-wrap items-center gap-4 border-t bg-card px-6 py-3">
         <span className="font-semibold">{sender.trim().toUpperCase() || t("（請在上方填寄件公司）", "(name the sender above)")}</span>
         <span className="text-muted-foreground" role="status">{refreshError ?? (n ? t(`你改了 ${n} 處`, `You changed ${n} field${n === 1 ? "" : "s"}`) : t("還沒有修改", "No changes yet"))}</span>
-        <Button className="ml-auto" onClick={approve}>{n ? t("確認修正，讓系統學起來", "Approve corrections and let it learn") : t("全部正確，確認", "All correct, approve")}</Button>
+        <Button className="ml-auto" onClick={approve}>{t("確認", "Approve")}</Button>
       </div>
     </>
   );
@@ -397,8 +384,6 @@ function RawRow({ page, ri, before, onChange, onDone }: {
           );
         })}
       </div>
-      <p className="mt-2 text-[13px] text-muted-foreground">{t("這裡是文件上印的原文。改原文會重新整理成上面的標準格式；欄位對應錯了，到上方「欄位對應」改。",
-        "This is the text as printed on the document. Editing it re-normalizes the row above; if a column is mapped wrong, fix it under \"Column mapping\" above.")}</p>
     </div>
   );
 }
@@ -451,8 +436,6 @@ function MapCard({ page: p, current, warnCols, pageTabs, changed, onRewire, chil
     <Card className={SECTION}>
       <div className="mb-3.5 flex flex-wrap items-baseline gap-3">
         <h2 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h2>
-        <span className="text-[13px] text-muted-foreground">{t(`第 ${current + 1} 頁：上面是文件印的欄位和第一列的內容，下面是系統的標準欄位`,
-          `Page ${current + 1}: printed columns with the first row's text above, standard fields below`)}</span>
       </div>
       {pageTabs}
       <div ref={mapRef} className="relative">
@@ -481,8 +464,6 @@ function MapCard({ page: p, current, warnCols, pageTabs, changed, onRewire, chil
           ))}
         </div>
       </div>
-      <p className="mt-3.5 text-center text-[13px] text-muted-foreground">{t(`${p.columns.length} 個印出來的欄位，對應到 ${fields.length} 個標準欄位。線連錯了，在上面那一欄的選單改，明細會馬上重算。`,
-        `${p.columns.length} printed column${p.columns.length === 1 ? "" : "s"} mapped to ${fields.length} standard field${fields.length === 1 ? "" : "s"}. If a wire is wrong, change it in that column's dropdown above; the line items recalculate right away.`)}</p>
       {children}
     </Card>
   );
@@ -525,8 +506,6 @@ function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
         <Button disabled={busy} onClick={go}>{t(`重讀第 ${page + 1} 頁`, `Re-read page ${page + 1}`)}</Button>
         <span className="text-muted-foreground" role="status">{msg}</span>
       </div>
-      <p className="mt-2 text-[13px] text-muted-foreground">{t("系統會帶著這個欄名重讀這一頁，只把新讀到的欄位補進來，其他格子和你改過的內容都不動。確認後，下次這家的文件會記得有這一欄。",
-        "It re-reads this page with that column name and adds only the new column; other cells and your edits stay as they are. Once approved, this sender's next document will include it.")}</p>
     </details>
   );
 }

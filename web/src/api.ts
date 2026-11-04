@@ -43,13 +43,13 @@ export type ReadingVersion = { id: string; key: string; version: number; status:
 export type SenderInfo = { sender: string; hold: boolean; versions: ReadingVersion[]; approved: { cls: string; count: number }[]; docs: ListedDoc[] };
 
 export const reasonText = (r: AutoReason) => ({
-  unknown_sender: t("第一次收到這家的這種文件", "First document of this kind from this sender"),
-  on_hold: t("這家之前有一份自動確認後被改過，先暫停自動確認", "An earlier automatic approval for this sender was corrected, so automatic approval is paused"),
-  not_checked: t("第二系統沒有核對到每個值（核對失敗，或頁面沒有文字也沒有掃描圖）", "The second system could not check every value (a failed check, or a page with neither text nor a scan image)"),
-  flagged: t("第二系統對某些值有疑慮", "The second system doubts some values"),
-  findings: t("自動核對有沒通過的項目", "Some automatic checks failed"),
-  layout_changed: t("欄位跟這家上一份不一樣，可能換了格式", "The columns differ from this sender's last document; the layout may have changed"),
-  reopened: t("這份被標成有錯，重新審核", "This document was marked wrong and reopened"),
+  unknown_sender: t("新廠商", "New sender"),
+  on_hold: t("這家的自動確認暫停中", "Automatic approval is paused for this sender"),
+  not_checked: t("有些值沒有核對到", "Some values could not be checked"),
+  flagged: t("有值待確認", "Some values are flagged"),
+  findings: t("有檢查沒過", "Some checks failed"),
+  layout_changed: t("欄位跟上一份不同", "Columns differ from the last document"),
+  reopened: t("被標成有錯", "Marked wrong"),
 })[r];
 
 // Every error response is { error: { code, message } }; the screen shows message and branches on code.
@@ -76,17 +76,17 @@ export const creditText = () => t("讀取額度暫時用完了（每天有讀取
 
 // The server writes its messages in Chinese; known codes get both languages here, anything else shows the server's text.
 const MESSAGES: Record<string, [zh: string, en: string]> = {
-  credit_exhausted: ["示範額度已用完，請打開範例貨件", "The demo credit is used up. Open a sample shipment instead."],
-  too_many_pages: ["這份文件超過 20 頁，示範版一次最多讀 20 頁。", "This document has more than 20 pages; the demo reads at most 20 per upload."],
+  credit_exhausted: ["今天的讀取額度用完了。", "Today's read limit is reached."],
+  too_many_pages: ["超過 20 頁，一次最多 20 頁。", "Over 20 pages; the limit is 20 per upload."],
   too_large: ["檔案超過 25 MB。", "The file is over 25 MB."],
-  not_pdf: ["這不是 PDF 檔，或 PDF 已損壞，打不開。", "This is not a PDF, or the PDF is broken and cannot be opened."],
-  bad_answer: ["送出的資料格式不對，請重新整理頁面再試一次。", "The data sent was not in the expected form. Reload the page and try again."],
-  bad_column: ["請填文件上印的欄名，並選它是哪個欄位。", "Name the printed column and pick what it is."],
-  still_missing: ["重讀後還是沒有這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。", "The re-read still has no such column, or its rows do not line up. Check the name matches what is printed."],
-  sender_required: ["請先填寄件公司再確認。", "Name the sender before approving."],
-  not_approved: ["這份文件還沒核准，核准後才能匯出。", "This document is not approved yet; approve it to export."],
+  not_pdf: ["不是 PDF，或檔案損壞。", "Not a PDF, or the file is broken."],
+  bad_answer: ["資料格式不對，請重新整理頁面。", "Something went wrong. Reload the page."],
+  bad_column: ["請填欄名並選擇欄位。", "Enter the column name and pick a field."],
+  still_missing: ["還是讀不到這一欄，請確認欄名跟文件上一樣。", "Still not found. Check the name matches the document."],
+  sender_required: ["請先填寄件公司。", "Enter the sender first."],
+  not_approved: ["還沒確認，不能匯出。", "Approve it before exporting."],
   not_found: ["找不到這份文件。", "Document not found."],
-  no_webhook: ["這家在出口流程裡沒有設定網址的 Webhook，也沒有設定收件人的 Email。", "This sender has no webhook with a URL and no email with a recipient in the export flow."],
+  no_webhook: ["這家還沒設定出口（Webhook 或 Email）。", "No webhook or email set up for this sender."],
   bad_flow: ["出口流程格式不對。", "The export flow is not valid."],
 };
 export function errorMessage(e: unknown): string {

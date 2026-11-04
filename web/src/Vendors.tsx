@@ -91,6 +91,10 @@ function Sender({ s }: { s: SenderInfo }) {
   const approved = s.approved.reduce((n, a) => n + a.count, 0);
   const reopened = s.docs.filter((d) => d.reopened).length;
   const waiting = s.docs.filter((d) => d.status === "review").length;
+  const learned = (["PL", "SO"] as const).flatMap((cls) => {
+    const v = s.versions.find((x) => x.status === "active" && x.key.endsWith(`/${cls}`));
+    return v ? [[cls, v] as const] : [];
+  });
   const tiles = [[approved, t("已確認", "Approved in total")], [auto, t("自動確認", "Approved automatically")], [reopened, t("事後被改", "Corrected later")], [waiting, t("待審核", "To review")]] as const;
   return (
     <Card className="gap-0 p-6">
@@ -113,25 +117,23 @@ function Sender({ s }: { s: SenderInfo }) {
         ))}
       </dl>
 
-      <h3 className="mb-2 flex items-center gap-2 text-base font-semibold"><Icon d={ICON.spark} />{t("讀法", "Readings")}</h3>
-      <div className="mb-6 grid divide-y">
-        {(["PL", "SO"] as const).map((cls) => {
-          const vs = s.versions.filter((v) => v.key.endsWith(`/${cls}`)).slice().reverse();
-          const count = s.approved.find((a) => a.cls === cls)?.count ?? 0;
-          if (!vs.length && !count) return null;
-          return (
-            <section key={cls} className="py-3 first:pt-1">
-              <div className="flex items-center gap-3">
-                <DocIcon so={cls === "SO"} />
-                <strong className="flex-1 font-medium">{L.DOC_TYPE[cls]}</strong>
-                <span className="text-[13px] text-muted-foreground">{t(`已確認 ${count} 份`, `${count} approved`)}</span>
-              </div>
-              {!vs.length && <p className="mt-2 text-[13px] text-muted-foreground">{t("通用讀法", "General reading")}</p>}
-              {vs.length > 0 && <ol className="m-0 mt-3 grid list-none gap-0 p-0">{vs.map((v, i) => <Version key={v.id} v={v} last={i === vs.length - 1} />)}</ol>}
-            </section>
-          );
-        })}
-      </div>
+      {/* Only what was learned from corrections; version history is the system's business. */}
+      {learned.length > 0 && (
+        <>
+          <h3 className="mb-2 flex items-center gap-2 text-base font-semibold"><Icon d={ICON.spark} />{t("從修正學到的", "Learned from corrections")}</h3>
+          <div className="mb-6 grid divide-y">
+            {learned.map(([cls, v]) => (
+              <section key={cls} className="py-3 first:pt-1">
+                <div className="mb-2 flex items-center gap-3">
+                  <DocIcon so={cls === "SO"} />
+                  <strong className="font-medium">{L.DOC_TYPE[cls]}</strong>
+                </div>
+                <Learned v={v} />
+              </section>
+            ))}
+          </div>
+        </>
+      )}
 
       <h3 className="mb-2 flex items-center gap-2 text-base font-semibold"><Icon d={ICON.clock} />{t("最近的文件", "Recent documents")}</h3>
       <ul className="m-0 grid list-none gap-0.5 p-0">
@@ -151,35 +153,20 @@ function Sender({ s }: { s: SenderInfo }) {
   );
 }
 
-/** One reading version on a timeline; the active one is open. */
-function Version({ v, last }: { v: ReadingVersion; last: boolean }) {
+/** The rules in use for one document type: column names, notes, fields a person always checks. */
+function Learned({ v }: { v: ReadingVersion }) {
   const L = labels();
-  const active = v.status === "active";
   return (
-    <li className="relative pb-3 pl-6 last:pb-0">
-      {!last && <span aria-hidden="true" className="absolute top-3 bottom-0 left-[5px] w-px bg-border" />}
-      <span aria-hidden="true" className={cn("absolute top-1.5 left-0 size-[11px] rounded-full border-2 border-white", active ? "bg-ok" : v.status === "retired" ? "bg-input" : "bg-primary")} />
-      <details open={active}>
-        <summary className="cursor-pointer text-sm">
-          <span className="font-medium">{t(`第 ${v.version} 版`, `Version ${v.version}`)}</span>
-          <span className={cn("ml-2 text-xs", active ? "font-medium text-ok" : "text-muted-foreground")}>
-            {active ? t("使用中", "active") : v.status === "retired" ? t("已停用", "retired") : t("候選", "candidate")}
-          </span>
-          {v.change && <span className="ml-2 text-[13px] text-muted-foreground">{v.change}</span>}
-        </summary>
-        <div className="mt-2 grid gap-2 text-[13px]">
-          {!!v.columns.length && (
-            <div className="flex flex-wrap gap-1.5">
-              {v.columns.map((c, i) => (
-                <span key={i} className="rounded-full bg-accent px-2.5 py-0.5 text-xs">{c.label.replace(/\n/g, " ")} → <b className="font-medium text-primary">{L.FIELD[c.field] ?? c.field}</b></span>
-              ))}
-            </div>
-          )}
-          {v.notes.length > 0 && <ul className="m-0 list-disc pl-5 text-muted-foreground">{v.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>}
-          {v.always_review.length > 0 && <p className="text-warn">{t("固定請人確認：", "Always reviewed: ")}{v.always_review.map((p) => { const k = p.split(".").pop()!; return L.FIELD[k] ?? L.HEAD[k] ?? L.TOTAL[k] ?? p; }).join(t("、", ", "))}</p>}
-          <p className="text-muted-foreground">{t(`依據 ${v.examples} 份確認過的文件`, `Based on ${v.examples} approved document${v.examples === 1 ? "" : "s"}`)}</p>
+    <div className="grid gap-2 pl-12 text-[13px]">
+      {!!v.columns.length && (
+        <div className="flex flex-wrap gap-1.5">
+          {v.columns.map((c, i) => (
+            <span key={i} className="rounded-full bg-accent px-2.5 py-0.5 text-xs">{c.label.replace(/\n/g, " ")} → <b className="font-medium text-primary">{L.FIELD[c.field] ?? c.field}</b></span>
+          ))}
         </div>
-      </details>
-    </li>
+      )}
+      {v.notes.length > 0 && <ul className="m-0 list-disc pl-5">{v.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>}
+      {v.always_review.length > 0 && <p className="text-warn">{t("固定請人確認：", "Always reviewed: ")}{v.always_review.map((p) => { const k = p.split(".").pop()!; return L.FIELD[k] ?? L.HEAD[k] ?? L.TOTAL[k] ?? p; }).join(t("、", ", "))}</p>}
+    </div>
   );
 }

@@ -112,8 +112,8 @@ function Steps({ at, doc }: { at: number; doc?: Doc }) {
   const auto = !!doc?.auto?.ok;
   // A first document goes straight to a person without the second check.
   const first = !!doc && !doc.verify && !!doc.auto?.reasons.includes("unknown_sender");
-  const names = [t("收件", "Received"), t("第一系統讀取", "First read"), first ? t("第二系統核對（新廠商，略過）", "Second check (new sender, skipped)") : t("第二系統核對", "Second check"),
-    auto ? t("審核（自動略過）", "Review (skipped)") : t("人工審核", "Review"), t("確認並學習", "Approve and learn"), t("送出", "Send")];
+  const names = [t("收件", "Received"), t("讀取", "Read"), first ? t("核對（新廠商略過）", "Check (skipped, new sender)") : t("核對", "Check"),
+    auto ? t("審核（自動略過）", "Review (skipped)") : t("人工審核", "Review"), t("確認", "Approve"), t("送出", "Send")];
   return (
     <ol className="steps mb-4 flex list-none flex-wrap gap-1.5 p-0" aria-label={t("處理流程", "Workflow")}>
       {names.map((s, i) => (
@@ -272,7 +272,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
                     <span className="block truncate font-medium">{d.name}</span>
                     <span className="block truncate text-[13px] text-muted-foreground">{d.sender ?? t("還不認得的廠商", "New sender")} · {when(d.created_at)}</span>
                   </span>
-                  {d.flagged ? <span className="text-xs font-medium whitespace-nowrap text-warn">{t(`${d.flagged} 個疑慮`, `${d.flagged} doubtful`)}</span> : null}
+                  {d.flagged ? <span className="text-xs font-medium whitespace-nowrap text-warn">{t(`${d.flagged} 個待確認`, `${d.flagged} flagged`)}</span> : null}
                   <Icon d={ICON.chevron} className="text-muted-foreground transition-transform group-hover:translate-x-0.5" />
                 </a>
               </li>
@@ -346,7 +346,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
                   <TableHead className={head}>{t("文件", "Document")}</TableHead>
                   <TableHead className={head}>{t("寄件公司", "Sender")}</TableHead>
                   <TableHead className={head}>{t("狀態", "Status")}</TableHead>
-                  <TableHead className={head}>{t("第二系統", "Second check")}</TableHead>
+                  <TableHead className={head}>{t("核對", "Check")}</TableHead>
                   <TableHead className={cn(head, "text-right")}>{t("收件時間", "Received")}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -366,7 +366,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
                     <TableCell className={cell}>{statusBadge(d)}</TableCell>
                     <TableCell className={cell}>
                       {d.flagged === null ? <span className="text-muted-foreground">{t("未核對", "Not checked")}</span>
-                        : d.flagged ? <span className="font-medium text-warn">{t(`${d.flagged} 個有疑慮`, `${d.flagged} doubtful`)}</span>
+                        : d.flagged ? <span className="font-medium text-warn">{t(`${d.flagged} 個待確認`, `${d.flagged} flagged`)}</span>
                         : <span className="text-muted-foreground">{t("全部通過", "All passed")}</span>}
                     </TableCell>
                     <TableCell className={cn(cell, "text-right whitespace-nowrap text-muted-foreground")}>{when(d.created_at)}</TableCell>
@@ -434,15 +434,12 @@ function Export({ doc }: { doc: Doc }) {
 
 function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void }) {
   useLang();
-  const { FIELD, HEAD, TOTAL, DOC_TYPE } = labels();
+  const { FIELD, HEAD, TOTAL } = labels();
   const a = doc.approved!, l = a.learn, auto = !!doc.auto?.ok;
   const [info, setInfo] = useState<SenderInfo | null>(null);
   const [reopen, setReopen] = useState<"idle" | "busy" | { error: unknown }>("idle");
   useEffect(() => { api<SenderInfo[]>("/api/senders").then((s) => setInfo(s.find((x) => x.sender === a.sender) ?? null), () => {}); }, [a.sender]);
   const cls = doc.run.cls ?? "PL";
-  const docType = DOC_TYPE[cls] ?? t("文件", "document");
-  // In an English sentence the type is a common noun.
-  const kind = t(docType, docType.toLowerCase());
   const approvedData = useApproved(doc.id, !!a.approved_at);
   const [pdf, setPdf] = useState(false);
   const closePdf = useCallback(() => setPdf(false), []);
@@ -462,8 +459,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   if (l.outcome === "activated") {
     const before = l.scores.current.reduce((x, y) => x + y, 0), after = l.scores.candidate.reduce((x, y) => x + y, 0);
     tone = "ok";
-    title = t(`學到了：${a.sender} 的${docType}讀法更新到第 ${l.version.version} 版`, `Learned: ${a.sender}'s ${kind} reading is now version ${l.version.version}`);
-    title = t(`讀法更新到第 ${l.version.version} 版`, `Reading updated to version ${l.version.version}`);
+    title = t("從你的修正學到了", "Learned from your corrections");
     body = (
       <>
         <p>{t(`依你的 ${a.corrected} 處修正；重讀 ${l.scores.candidate.length} 份已確認文件，要改的地方 ${before} → ${after}。`,
@@ -473,7 +469,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
     );
   } else if (l.outcome === "kept") {
     tone = "warn";
-    title = t("讀法沒有更新", "Reading not updated");
+    title = t("這次沒學會", "Could not learn from this");
     body = <p>{t(`這家以後固定請人確認：${fields(l.always_review)}`, `Always reviewed for this sender from now on: ${fields(l.always_review)}`)}</p>;
   } else if (auto) {
     tone = "ok";
