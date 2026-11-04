@@ -390,9 +390,13 @@ function Export({ doc }: { doc: Doc }) {
         <>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("現在送出", "Send now")}</Button>
-            <Button asChild variant="outline"><a href={`${base}.json`} download>{t("下載 JSON", "Download JSON")}</a></Button>
-            <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("下載 CSV", "Download CSV")}</a></Button>
-            <Button variant="ghost" onClick={copyUrl}>{copy === "done" ? t("已複製", "Copied") : t("複製 JSON 網址", "Copy JSON link")}</Button>
+            {doc.download && (
+              <>
+                <Button asChild variant="outline"><a href={`${base}.json`} download>{t("下載 JSON", "Download JSON")}</a></Button>
+                <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("下載 CSV", "Download CSV")}</a></Button>
+                <Button variant="ghost" onClick={copyUrl}>{copy === "done" ? t("已複製", "Copied") : t("複製 JSON 網址", "Copy JSON link")}</Button>
+              </>
+            )}
           </div>
           <div role="status" className="mt-2 text-sm text-muted-foreground empty:hidden">
             {copy === "failed" && <>{t("無法自動複製，請手動複製：", "Could not copy; copy it by hand: ")}<code className="select-all break-all">{url}</code></>}

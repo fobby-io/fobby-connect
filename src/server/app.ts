@@ -16,7 +16,7 @@ import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { schemas } from "../shared/model-output.ts";
 import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts";
 import { exportCsv, exportJson, fixesOf, toValues, withValues, type Exportable } from "./export.ts";
-import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
+import { deliver, downloadable, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
 /** Files keep documents only: runs/<id>.pdf|json (the PDF and its read result), prompts/<hash>.json (each request sent) and space.json. Data lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
 /** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
@@ -118,6 +118,8 @@ export function createApp(deps: Deps) {
   };
   // What a delivery or download sends: the approved record as stored.
   const approvedValues = async (d: Saved) => (await valuesOf(d, (d as Exportable).approved.answer)).n;
+  // The result page offers download only when the sender's branch in the flow keeps a download output.
+  const shown = async (d: Saved) => ({ ...(await view(d)), download: downloadable((await getFlow()).graph, senderOf(d) ?? "") });
   const newId = () => crypto.randomUUID().slice(0, 8);
   // Every paid action (a read, a column re-read, a corrected approval) counts against one daily cap for all spaces.
   async function spend(_kind: "read" | "column" | "learn") {
@@ -356,7 +358,7 @@ export function createApp(deps: Deps) {
     if (req.method === "POST" && path === "/api/documents") {
       const bytes = await body();
       const d = await ingest(bytes, url.searchParams.get("name") ?? "", url.searchParams.get("sender") || null);
-      return json(200, await view(d));
+      return json(200, await shown(d));
     }
     if (req.method === "GET" && path === "/api/documents") return json(200, await docList());
     if (req.method === "GET" && path === "/api/profiles") {
@@ -379,10 +381,11 @@ export function createApp(deps: Deps) {
       if (!pdf) throw fail(404, "not_found", `document ${m[1]}`);
       return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });
     }
-    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, await view(await load(m[1]!)));
+    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, await shown(await load(m[1]!)));
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/export\.(csv|json)$/))) {
       const d = await load(m[1]!);
       if (!d.approved?.answer || !d.approved.approved_at) throw fail(409, "not_approved", "這份文件還沒核准，核准後才能匯出。");
+      if (!downloadable((await getFlow()).graph, d.approved.sender)) throw fail(403, "download_off", "出口流程沒有給這家廠商下載。");
       const x = d as Exportable;
       return m[2] === "csv"
         ? download(exportCsv(x, await approvedValues(d)), "text/csv", `${d.id}.csv`)
@@ -459,7 +462,7 @@ export function createApp(deps: Deps) {
     // the sender is on hold, so its next documents go to a person until one passes review unchanged.
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/reopen$/))) {
       const d = await load(m[1]!);
-      if (!d.approved) return json(200, await view(d));
+      if (!d.approved) return json(200, await shown(d));
       const sp = await space();
       await db.markReopened(sp, d.id);
       await db.saveProfiles(sp, { put: [], added: [], removed: [d.id] });
@@ -467,7 +470,7 @@ export function createApp(deps: Deps) {
       d.approved = undefined;
       d.auto = { ok: false, reasons: ["reopened"] };
       await save(d);
-      return json(200, await view(d));
+      return json(200, await shown(d));
     }
     // Deleting removes the row first, so the document is gone from every screen even if a file is left behind; its
     // example leaves the sender's approved set. Deliveries already sent stay with their receivers.

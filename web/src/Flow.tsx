@@ -30,7 +30,7 @@ function initial(senders: string[]): Graph {
     { id: "switch", kind: "switch", x: col(4), y: 150 },
   ];
   const edges: Edge[] = [["intake", "read"], ["read", "check"], ["check", "approve"], ["approve", "switch"]];
-  const branches = [...senders.slice(0, 3), OTHER];
+  const branches = [...senders, OTHER];
   let y = 24;
   branches.forEach((s) => {
     const b = `branch:${s}`;
@@ -44,7 +44,8 @@ function initial(senders: string[]): Graph {
   return { nodes, edges, autoSend: true };
 }
 
-const fresh = () => api<SenderInfo[]>("/api/senders").then((s) => initial(s.map((x) => x.sender)), () => initial([]));
+const senderNames = () => api<SenderInfo[]>("/api/senders").then((s) => s.map((x) => x.sender), () => [] as string[]);
+const fresh = () => senderNames().then(initial);
 
 export function Flow() {
   useLang();
@@ -53,6 +54,8 @@ export function Flow() {
   const [host, setHost] = useState<Host>({ mail: false, intake: null });
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | { error: unknown }>("idle");
   const [sel, setSel] = useState<string | null>(null);
+  const [senders, setSenders] = useState<string[]>([]);
+  useEffect(() => { senderNames().then(setSenders); }, []);
   // What the server has, so opening the screen does not write it back; a flow the server lacks is saved at once.
   const stored = useRef("");
   useEffect(() => {
@@ -75,15 +78,30 @@ export function Flow() {
   const patch = (id: string, p: Partial<Node>) => setG({ ...g, nodes: g.nodes.map((n) => (n.id === id ? { ...n, ...p } : n)) });
   const branchOf = (n: Node | null) => (n?.kind === "branch" ? n : n && OUTPUTS.includes(n.kind) ? g.nodes.find((b) => g.edges.some(([f, to]) => f === b.id && to === n.id)) ?? null : null);
 
+  // A new output goes under the selected branch, or under "every other sender" while that branch exists.
+  const target = branchOf(selected) ?? g.nodes.find((n) => n.kind === "branch" && n.sender === OTHER) ?? null;
   const add = (kind: Kind) => {
-    const b = branchOf(selected) ?? g.nodes.find((n) => n.kind === "branch" && n.sender === OTHER)!;
+    const b = target!;
     const siblings = g.nodes.filter((n) => g.edges.some(([f, to]) => f === b.id && to === n.id));
     const id = `${b.id}:${kind}:${Date.now().toString(36)}`;
     const y = Math.max(b.y, ...siblings.map((s) => s.y + H + 16));
     setG({ ...g, nodes: [...g.nodes, { id, kind, x: col(6), y, ...(kind === "webhook" ? { name: t("新的 Webhook", "New webhook"), url: "" } : kind === "email" ? { to: "" } : {}) }], edges: [...g.edges, [b.id, id]] });
     setSel(id);
   };
-  const remove = (id: string) => { setG({ ...g, nodes: g.nodes.filter((n) => n.id !== id), edges: g.edges.filter(([f, to]) => f !== id && to !== id) }); setSel(null); };
+  // A branch goes with its outputs; its sender's documents then follow "every other sender", or go nowhere without it.
+  const remove = (id: string) => {
+    const gone = new Set([id, ...g.edges.filter(([f]) => f === id && g.nodes.find((n) => n.id === id)?.kind === "branch").map(([, to]) => to)]);
+    setG({ ...g, nodes: g.nodes.filter((n) => !gone.has(n.id)), edges: g.edges.filter(([f, to]) => !gone.has(f) && !gone.has(to)) });
+    setSel(null);
+  };
+  const branched = new Set(g.nodes.filter((n) => n.kind === "branch").map((n) => n.sender?.toUpperCase()));
+  const missing = [...senders, OTHER].filter((s) => !branched.has(s.toUpperCase()));
+  const addBranch = (s: string) => {
+    const b = `branch:${s}`, d = `${b}:d:${Date.now().toString(36)}`;
+    const y = Math.max(0, ...g.nodes.filter((n) => n.x >= col(5)).map((n) => n.y + H)) + 18;
+    setG({ ...g, nodes: [...g.nodes, { id: b, kind: "branch", sender: s, x: col(5), y }, { id: d, kind: "download", x: col(6), y }], edges: [...g.edges, ["switch", b], [b, d]] });
+    setSel(b);
+  };
 
   return (
     <>
@@ -93,7 +111,14 @@ export function Flow() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">{t("新增出口：", "Add output: ")}</span>
-          {OUTPUTS.map((k) => <Button key={k} size="sm" variant="outline" onClick={() => add(k)}>+ {kindName(k)}</Button>)}
+          {OUTPUTS.map((k) => <Button key={k} size="sm" variant="outline" disabled={!target} title={target ? undefined : t("先選一個廠商分支", "Select a sender branch first")} onClick={() => add(k)}>+ {kindName(k)}</Button>)}
+          {missing.length > 0 && (
+            <select aria-label={t("新增廠商分支", "Add sender branch")} className="h-8 rounded-md border bg-background px-2 text-sm" value=""
+              onChange={(e) => e.target.value && addBranch(e.target.value)}>
+              <option value="">{t("+ 廠商分支", "+ Sender branch")}</option>
+              {missing.map((s) => <option key={s} value={s}>{s === OTHER ? t("其他所有廠商", "Every other sender") : s}</option>)}
+            </select>
+          )}
           <Button size="sm" variant="ghost" onClick={async () => { setSel(null); setG(await fresh()); }}>{t("重設", "Reset")}</Button>
           <span role="status" className="text-[13px] text-muted-foreground">
             {saved === "saving" ? t("儲存中…", "Saving…") : saved === "saved" ? t("已儲存", "Saved") : typeof saved === "object" ? errorMessage(saved.error) : ""}
@@ -258,11 +283,8 @@ function Inspector({ g, host, node, secret, onPatch, onRemove, onAutoSend }: {
           )}
           {node.kind === "download" && <p className="text-sm">{t("在文件頁下載 JSON、CSV", "JSON and CSV on the document page")}</p>}
           {!OUTPUTS.includes(node.kind) && node.kind !== "branch" && <p className="text-sm text-muted-foreground">{sub(node, host)}</p>}
-          {OUTPUTS.includes(node.kind) && (
-            <>
-              <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>
-            </>
-          )}
+          {OUTPUTS.includes(node.kind) && <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>}
+          {node.kind === "branch" && <Button size="sm" variant="outline" className="mt-3 self-start" onClick={() => onRemove(node.id)}>{t("移除這個分支", "Remove this branch")}</Button>}
         </>
       )}
     </Card>

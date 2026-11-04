@@ -7,7 +7,7 @@ const Node = z.object({
   sender: z.string().max(200).optional(), name: z.string().max(100).optional(), url: z.string().max(500).optional(), to: z.string().max(200).optional(),
 });
 export const Graph = z.object({
-  nodes: z.array(Node).max(80), edges: z.array(z.tuple([z.string().max(200), z.string().max(200)])).max(120), autoSend: z.boolean(),
+  nodes: z.array(Node).max(400), edges: z.array(z.tuple([z.string().max(200), z.string().max(200)])).max(600), autoSend: z.boolean(),
 });
 export type Graph = z.infer<typeof Graph>;
 /** secret signs every delivery; it is made once per flow and shown on the flow screen so the receiver can verify. */
@@ -35,6 +35,9 @@ function outputs(g: Graph | null, sender: string) {
 export function targets(g: Graph | null, sender: string): { name: string; url: string }[] {
   return outputs(g, sender).filter((n) => n.kind === "webhook" && n.url?.trim()).map((n) => ({ name: n.name ?? "Webhook", url: n.url!.trim() }));
 }
+
+/** Whether this sender's branch keeps a download output. Before any flow is saved, every document can be downloaded. */
+export const downloadable = (g: Graph | null, sender: string) => !g || outputs(g, sender).some((n) => n.kind === "download");
 
 export const isAddress = (s: string) => /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(s);
 /** The email recipients of this sender's branch, each once. Empty or malformed addresses are skipped. */
