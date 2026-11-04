@@ -126,7 +126,7 @@ Customer documents only go to tiers whose data is not used to train Meta's model
 
 ## Built during the hackathon
 
-Everything in this repository was written during the hackathon, between 2026-10-27 and 2026-11-04. Work started on 2026-10-27; the first commit is from 2026-11-01, when the code first went into git. Nothing from fobby.io, the author's freight-quote product, is used. Meta Global AI Developer Hackathon, Startups track, "Build for Your World".
+Everything in this repository was written during the hackathon and committed between 2026-11-01 and 2026-11-04 (see the git history). Nothing from fobby.io, the author's freight-quote product, is used. Meta Global AI Developer Hackathon, Startups track, "Build for Your World".
 
 | Part | Code |
 |---|---|
