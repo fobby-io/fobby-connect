@@ -13,8 +13,8 @@ const DOT = "gap-1.5 rounded-full border-0 px-2.5 py-0.5 text-xs font-medium bef
 const known = (s: SenderInfo) => s.approved.length > 0;
 function State({ s }: { s: SenderInfo }) {
   if (s.hold) return <Badge className={cn(DOT, "bg-warn-bg text-warn")}>{t("暫停自動確認", "Paused")}</Badge>;
-  if (known(s)) return <Badge className={cn(DOT, "bg-ok-bg text-ok")}>{t("自動確認中", "Automatic")}</Badge>;
-  return <Badge className={cn(DOT, "bg-muted text-muted-foreground")}>{t("學習中", "Learning")}</Badge>;
+  if (known(s)) return <Badge className={cn(DOT, "bg-ok-bg text-ok")}>{t("已認得", "Known")}</Badge>;
+  return <Badge className={cn(DOT, "bg-muted text-muted-foreground")}>{t("新廠商", "New")}</Badge>;
 }
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => [...w][0]).join("").toUpperCase();
@@ -41,7 +41,7 @@ export function Vendors() {
         </div>
         {!!list?.length && (
           <dl className="m-0 flex gap-5 text-sm">
-            {([[count(() => true), t("家廠商", "senders")], [count((x) => known(x) && !x.hold), t("自動確認中", "automatic")], [count((x) => x.hold), t("暫停", "paused")]] as const).map(([n, label]) => (
+            {([[count(() => true), t("家廠商", "senders")], [count((x) => known(x) && !x.hold), t("已認得", "known")], [count((x) => x.hold), t("暫停", "paused")]] as const).map(([n, label]) => (
               <div key={label} className="flex items-baseline gap-1.5"><dt className="sr-only">{label}</dt><dd className="m-0 text-xl font-semibold">{n}</dd><span className="text-muted-foreground">{label}</span></div>
             ))}
           </dl>
@@ -94,7 +94,7 @@ function Sender({ s }: { s: SenderInfo }) {
   const approved = s.approved.reduce((n, a) => n + a.count, 0);
   const reopened = s.docs.filter((d) => d.reopened).length;
   const waiting = s.docs.filter((d) => d.status === "review").length;
-  const tiles = [[approved, t("已確認", "Approved")], [auto, t("自動確認", "Automatic")], [reopened, t("事後被改", "Corrected later")], [waiting, t("待審核", "To review")]] as const;
+  const tiles = [[approved, t("已確認", "Approved in total")], [auto, t("自動確認", "Approved automatically")], [reopened, t("事後被改", "Corrected later")], [waiting, t("待審核", "To review")]] as const;
   return (
     <Card className="gap-0 p-6">
       <div className="mb-5 flex flex-wrap items-center gap-3">
