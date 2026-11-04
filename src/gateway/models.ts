@@ -2,6 +2,8 @@
 export const MODELS = {
   "muse-spark-1.3": { input: 1.25, cached_input: 0.15, output: 4.25, contributor: false },
   "muse-spark-1.3-contributor": { input: 0.1, cached_input: 0.002, output: 0.2, contributor: true },
+  // Read from dev.meta.ai/models/muse-wonder on 2026-11-04; the coding model rewrites reading notes.
+  "muse-wonder-1.0": { input: 4, cached_input: 0.2, output: 20, contributor: false },
 } as const;
 export type ModelId = keyof typeof MODELS;
 

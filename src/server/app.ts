@@ -7,14 +7,15 @@ import type { MetaClient } from "../gateway/meta-client.ts";
 import { normalize } from "../normalize/normalize.ts";
 import { matchSender, preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
 import { diff, learn, memoryStore, seed, type Page, type Store } from "../profiles/loop.ts";
-import { sparkRewrite } from "../profiles/rewrite.ts";
+import { museRewrite } from "../profiles/rewrite.ts";
 import { checkDocument } from "../rules/checks.ts";
 import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { schemas } from "../shared/model-output.ts";
 import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts";
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
+import { deliver, Graph, newSecret, targets, type Delivery, type Flow } from "./webhook.ts";
 
-/** Keys: runs/<id>.pdf|json, runs/index.json, profiles.json, senders.json, samples/index.json, samples/<id>.pdf|json. */
+/** Keys: runs/<id>.pdf|json, runs/index.json, profiles.json, senders.json, flow.json, samples/index.json, samples/<id>.pdf|json. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void> };
 /** decide is the second system (Jev); without it nothing is verified and every document goes to a person. */
 export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide };
@@ -23,7 +24,7 @@ export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged
 // approved.answer and approved_at are missing on documents approved before export existed.
 export type Saved = {
   id: string; name: string; run: RunResult; pages: PageInput[]; created_at?: string; verify?: Verification;
-  auto?: { ok: boolean; reasons: AutoReason[] };
+  auto?: { ok: boolean; reasons: AutoReason[] }; deliveries?: Delivery[];
   approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string };
 };
 export type Sample = { id: string; name: string; sender: string };
@@ -69,7 +70,7 @@ export function createApp(deps: Deps) {
     await files.put("runs/index.json", toJson([listed(d), ...list]));
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
-  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
+  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
 
   // Profiles live in one JSON: read per request, written back only when the request changed them.
@@ -99,20 +100,37 @@ export function createApp(deps: Deps) {
     const corrected = diff(model, answer).length;
     const result = await withStore((s) => learn(s, {
       doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
-    }, replayReader(g, s), sparkRewrite(client)));
+    }, replayReader(g, s), museRewrite(client)));
     d.approved = { sender, learn: result, corrected, answer, approved_at: new Date().toISOString() };
     return d.approved;
   }
 
+  // The flow's signing secret is made on first use and kept with the flow.
+  const getFlow = async (): Promise<Flow> => {
+    const f = await getJson<Flow>("flow.json");
+    if (f?.secret) return f;
+    const made = { graph: f?.graph ?? null, secret: newSecret() };
+    await files.put("flow.json", toJson(made));
+    return made;
+  };
+  // An approved document goes to every webhook of its sender's branch; a document sent before and approved again is a correction.
+  async function send(d: Saved, flow: Flow) {
+    const event = d.deliveries?.length ? "document.corrected" : "document.approved";
+    const out = await Promise.all(targets(flow.graph, d.approved!.sender).map((t) => deliver(t, event, exportJson(d as Exportable), flow.secret)));
+    d.deliveries = [...out, ...(d.deliveries ?? [])].slice(0, 20);
+    return out;
+  }
+  const autoSend = async (d: Saved) => { const f = await getFlow(); if (f.graph?.autoSend) await send(d, f); };
+
   /**
-   * After the first read: the second system checks every value, then the document is approved without a person only
-   * when the sender is known and not on hold, every value is verified, every rule passes and the columns are the ones
-   * this sender's last approved document had. Anything else goes to review, with the reasons.
+   * After the first read. A sender's first document of a kind goes to a person, who checks every value anyway, so the
+   * second system is not paid for. A known sender's document is checked value by value, and approved without a person
+   * only when the sender is not on hold, every value is verified, every rule passes and the columns are the ones this
+   * sender's last approved document had. Anything else goes to review, with the reasons.
    */
   async function intake(d: Saved) {
     d.created_at = new Date().toISOString();
     const outputs = d.run.pages.map((p) => p.output);
-    if (deps.decide) d.verify = await verifyDocument(deps.decide, d.pages, outputs);
     const cls = d.run.cls ?? "PL";
     // A sample was read before this sender was known: match its issuer against the senders known now.
     const { sender, last } = await withStore(async (s) => {
@@ -125,14 +143,15 @@ export function createApp(deps: Deps) {
     else {
       if ((await senderState())[sender]?.hold) reasons.push("on_hold");
       if (layoutKey(last.answer) !== layoutKey(outputs)) reasons.push("layout_changed");
+      if (deps.decide) d.verify = await verifyDocument(deps.decide, d.pages, outputs);
+      if (!d.verify || d.verify.unchecked_pages > 0) reasons.push("not_checked");
+      else if (d.verify.flagged > 0) reasons.push("flagged");
     }
-    if (!d.verify || d.verify.unchecked_pages > 0) reasons.push("not_checked");
-    else if (d.verify.flagged > 0) reasons.push("flagged");
     // Rules run again here so samples read before a rule existed are held to it too.
     d.run.findings = checkDocument(outputs);
     if (d.run.findings.length) reasons.push("findings");
     d.auto = { ok: reasons.length === 0, reasons };
-    if (d.auto.ok) await approveDoc(d, sender!, outputs);
+    if (d.auto.ok) { await approveDoc(d, sender!, outputs); await autoSend(d); }
     await save(d);
   }
 
@@ -181,7 +200,7 @@ export function createApp(deps: Deps) {
       const src = await getJson<Saved>(`samples/${m[1]}.json`);
       const pdf = await files.get(`samples/${m[1]}.pdf`);
       if (!src || !pdf) throw fail(404, "not_found", `sample ${m[1]}`);
-      const d: Saved = { ...src, id: newId(), approved: undefined, verify: undefined, auto: undefined };
+      const d: Saved = { ...src, id: newId(), approved: undefined, verify: undefined, auto: undefined, deliveries: undefined };
       await files.put(`runs/${d.id}.pdf`, pdf);
       await intake(d);
       return json(200, view(d));
@@ -229,8 +248,32 @@ export function createApp(deps: Deps) {
       const a = await approveDoc(d, sender, answer);
       // A sender on hold earns automatic approval back with a document a person approved without any correction.
       if (a.corrected === 0) await setHold(sender, false);
+      await autoSend(d);
       await save(d);
       return json(200, { corrected: a.corrected, learn: a.learn, approved_at: a.approved_at, spent: spent() });
+    }
+    // Send an approved document to its sender's webhooks now, whether or not the flow sends automatically.
+    if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/send$/))) {
+      const d = await load(m[1]!);
+      if (!d.approved?.answer || !d.approved.approved_at) throw fail(409, "not_approved", "這份文件還沒核准，核准後才能送出。");
+      const sent = await send(d, await getFlow());
+      if (!sent.length) throw fail(409, "no_webhook", "這家在出口流程裡沒有設定網址的 Webhook。");
+      await save(d);
+      return json(200, { deliveries: d.deliveries });
+    }
+    if (req.method === "GET" && path === "/api/flow") return json(200, await getFlow());
+    if (req.method === "PUT" && path === "/api/flow") {
+      const parsed = Graph.safeParse((await bodyJson<{ graph: unknown }>()).graph);
+      if (!parsed.success) throw fail(400, "bad_flow", "出口流程格式不對。");
+      const f = await getFlow();
+      await files.put("flow.json", toJson({ ...f, graph: parsed.data }));
+      return json(200, { ok: true });
+    }
+    // A test event to one URL from the flow screen, so a receiver can be set up before any document is approved.
+    if (req.method === "POST" && path === "/api/flow/test") {
+      const b = await bodyJson<{ name?: string; url?: string }>();
+      const f = await getFlow();
+      return json(200, await deliver({ name: String(b.name ?? "Webhook").slice(0, 100), url: String(b.url ?? "") }, "test", { message: "Test delivery from Fobby Connect" }, f.secret));
     }
     // "This one is wrong" on an approved document: back to review, its example leaves the sender's approved set, and
     // the sender is on hold, so its next documents go to a person until one passes review unchanged.

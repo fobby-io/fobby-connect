@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api, creditText, errorMessage, isCreditExhausted, post, type Doc, type ListedDoc, type Sample, type SenderInfo } from "./api.ts";
+import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type Sample, type SenderInfo } from "./api.ts";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table.tsx";
 import { fmt } from "./diff.ts";
-import { Flow } from "./Flow.tsx";
+import { DeliveryRow, Flow } from "./Flow.tsx";
 import { setLang, t, useLang } from "./i18n.ts";
 import { labels } from "./labels.ts";
 import { cn } from "./lib/utils.ts";
@@ -109,14 +109,16 @@ export function App() {
 function Steps({ at, doc }: { at: number; doc?: Doc }) {
   useLang();
   const auto = !!doc?.auto?.ok;
-  const names = [t("收件", "Received"), t("第一系統讀取", "First read"), t("第二系統核對", "Second check"),
+  // A first document goes straight to a person without the second check.
+  const first = !!doc && !doc.verify && !!doc.auto?.reasons.includes("unknown_sender");
+  const names = [t("收件", "Received"), t("第一系統讀取", "First read"), first ? t("第二系統核對（新廠商略過）", "Second check (skipped: new sender)") : t("第二系統核對", "Second check"),
     auto ? t("審核（自動略過）", "Review (skipped)") : t("人工審核", "Review"), t("確認並學習", "Approve and learn"), t("送出", "Send")];
   return (
     <ol className="steps mb-4 flex list-none flex-wrap gap-1.5 p-0" aria-label={t("處理流程", "Workflow")}>
       {names.map((s, i) => (
         <li key={i} aria-current={i === at ? "step" : undefined}
           className={cn("flex items-center gap-2 rounded-full bg-card py-1 pr-3.5 pl-1 text-sm text-muted-foreground",
-            i === at && "on font-semibold text-foreground", i < at && "done", auto && i === 3 && "skip")}>{s}</li>
+            i === at && "on font-semibold text-foreground", i < at && "done", ((auto && i === 3) || (first && i === 2)) && "skip")}>{s}</li>
       ))}
     </ol>
   );
@@ -251,6 +253,13 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
 function Export({ doc }: { doc: Doc }) {
   useLang();
   const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
+  const [deliveries, setDeliveries] = useState<Delivery[]>(doc.deliveries ?? []);
+  const [sending, setSending] = useState<"idle" | "busy" | { error: unknown }>("idle");
+  const sendNow = async () => {
+    setSending("busy");
+    try { setDeliveries((await post<{ deliveries: Delivery[] }>(`/api/documents/${doc.id}/send`, {})).deliveries); setSending("idle"); }
+    catch (e) { setSending({ error: e }); }
+  };
   const base = `/api/documents/${doc.id}/export`;
   const url = location.origin + `${base}.json`;
   // The clipboard is missing outside https and can refuse; then the address is shown to copy by hand.
@@ -269,13 +278,21 @@ function Export({ doc }: { doc: Doc }) {
           <Button asChild><a href={`${base}.json`} download>{t("完整資料（JSON）", "Full record (JSON)")}</a></Button>
           <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("Excel 表格（只有明細，CSV）", "Excel table (line items only, CSV)")}</a></Button>
           <Button variant="outline" onClick={copyUrl}>{t("複製下載網址", "Copy download URL")}</Button>
+          <Button variant="outline" disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("送到 Webhook", "Send to webhooks")}</Button>
           <span role="status" className="text-sm text-muted-foreground">
             {copy === "done" && t("已複製", "Copied")}
             {copy === "failed" && <>{t("無法自動複製，請手動複製：", "Could not copy; copy it by hand: ")}<code className="select-all break-all">{url}</code></>}
+            {typeof sending === "object" && <span className="text-warn">{errorMessage(sending.error)}</span>}
           </span>
         </div>
       ) : (
         <p className="text-muted-foreground">{t("這份在匯出功能上線前核准，沒有存下核准內容。重新打開範例再核准一次即可匯出。", "This document was approved before export existed, so its approved content was not stored. Open the sample again and approve it once more to export.")}</p>
+      )}
+      {deliveries.length > 0 && (
+        <>
+          <h4 className="mt-4 mb-1 text-sm font-bold">{t("Webhook 送出紀錄", "Webhook deliveries")}</h4>
+          <ul className="list-none p-0">{deliveries.map((d) => <DeliveryRow key={d.id} d={d} />)}</ul>
+        </>
       )}
     </Card>
   );
@@ -308,8 +325,8 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
       <div className="rounded-2xl bg-ok-bg px-6 py-5">
         <p className="mb-1 text-sm font-semibold text-ok">{t("學到了", "Learned")}</p>
         <h2 className="mb-2 text-xl font-bold">{t(`${a.sender} 的${docType}讀法更新到第 ${l.version.version} 版`, `${a.sender}'s ${docType} reading is now version ${l.version.version}`)}</h2>
-        <p className="my-1">{t(`你改了 ${a.corrected} 處。新讀法重讀這家已確認的 ${l.scores.candidate.length} 份文件，需要修改的地方從 ${before} 處降到 ${after} 處，確定沒有變差才採用。`,
-          `You corrected ${a.corrected} field(s). The new reading re-read this sender's ${l.scores.candidate.length} approved document(s): corrections needed went from ${before} to ${after}, and it was adopted only because nothing got worse.`)}</p>
+        <p className="my-1">{t(`你改了 ${a.corrected} 處。Muse Wonder 拿你的修正對照原文找出讀錯的原因，改寫這家的讀法；新讀法重讀這家已確認的 ${l.scores.candidate.length} 份文件，需要修改的地方從 ${before} 處降到 ${after} 處，確定沒有變差才採用。`,
+          `You corrected ${a.corrected} field(s). Muse Wonder compared your corrections with the printed page to find why they were misread and rewrote this sender's reading; it re-read this sender's ${l.scores.candidate.length} approved document(s): corrections needed went from ${before} to ${after}, and it was adopted only because nothing got worse.`)}</p>
         {l.version.notes.length
           ? <ul className="mt-2 list-disc pl-5">{l.version.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>
           : <p className="my-1">{t("這次學到的是這家的欄位排列，並把這份存成範例。", "What was learned is this sender's column layout, with this document kept as an example.")}</p>}

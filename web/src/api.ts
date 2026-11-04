@@ -19,7 +19,7 @@ export const PASS = 0.75, WRONG = 0.5;
 // The `view` the server returns for a document.
 export type Doc = {
   id: string; name: string; normalized: NormDoc; approved: Approved | null; created_at: string | null;
-  verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null;
+  verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null; deliveries: Delivery[];
   run: {
     cls: string | null; sender: string | null; issuer: string | null;
     prompt: { level: string; version: number } | null;
@@ -27,6 +27,11 @@ export type Doc = {
   };
 };
 export type Sample = { id: string; name: string; sender: string };
+// What src/server/webhook.ts records for one POST to a receiver.
+export type Delivery = {
+  id: string; event: string; name: string; url: string; at: string;
+  status: number | null; ok: boolean; receipt: string | null; ms: number; error?: string;
+};
 export type ListedDoc = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
   created_at: string; flagged: number | null; reopened: boolean;
@@ -76,6 +81,8 @@ const MESSAGES: Record<string, [zh: string, en: string]> = {
   sender_required: ["請先填寄件公司再確認。", "Name the sender before approving."],
   not_approved: ["這份文件還沒核准，核准後才能匯出。", "This document is not approved yet; approve it to export."],
   not_found: ["找不到這份文件。", "Document not found."],
+  no_webhook: ["這家在出口流程裡沒有設定網址的 Webhook。", "This sender has no webhook with a URL in the export flow."],
+  bad_flow: ["出口流程格式不對。", "The export flow is not valid."],
 };
 export function errorMessage(e: unknown): string {
   if (e instanceof ApiError && MESSAGES[e.code]) return t(...MESSAGES[e.code]!);

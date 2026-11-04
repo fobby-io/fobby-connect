@@ -109,7 +109,7 @@ export function example(a: Approved): string {
 }
 
 export type Read = (prompt: PromptVersion, doc: Approved) => Promise<Page[]>;
-export type Rewrite = (current: PromptVersion, errors: FieldError[]) => Promise<string[]>;
+export type Rewrite = (current: PromptVersion, errors: FieldError[], doc: Approved) => Promise<string[]>;
 
 const errorsOf = async (read: Read, v: PromptVersion, docs: Approved[]) =>
   Promise.all(docs.map(async (d) => diff(await read(v, d), d.answer).length));
@@ -164,7 +164,7 @@ export async function learn(s: Store, doc: Approved, read: Read, rewrite: Rewrit
   // A one-off misread only adds the document as an example; a repeated error also rewrites the notes.
   let last: Awaited<ReturnType<typeof validate>> | null = null;
   for (let tries = 1; tries <= maxTries; tries++) {
-    const notes = repeated.length || tries > 1 ? await rewrite(base, repeated.length ? repeated : errors) : base.notes;
+    const notes = repeated.length || tries > 1 ? await rewrite(base, repeated.length ? repeated : errors, doc) : base.notes;
     const cand = nextVersion(s, current, "sender", key, { columns, examples, notes, change: `from ${doc.doc_id}: ${errors.length} fields corrected` });
     last = await validate(read, current, cand, doc, earlier);
     if (last.ok) {

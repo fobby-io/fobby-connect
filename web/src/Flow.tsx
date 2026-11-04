@@ -1,8 +1,8 @@
 // The team's export flow: received → first read → second check → approved, then one branch per sender into its outputs.
-// Screen only for now: nodes can be moved, added and set up, and the layout stays in this browser; only download works.
+// The flow is kept on the server (src/server/webhook.ts reads it): webhooks and download work, email is still to come.
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { api, type SenderInfo } from "./api.ts";
-import { SECTION } from "./App.tsx";
+import { api, errorMessage, post, request, type Delivery, type SenderInfo } from "./api.ts";
+import { SECTION, when } from "./App.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
@@ -15,7 +15,7 @@ type Node = { id: string; kind: Kind; x: number; y: number; sender?: string; nam
 type Edge = [from: string, to: string];
 type Graph = { nodes: Node[]; edges: Edge[]; autoSend: boolean };
 
-const W = 160, H = 64, STEP = 180, KEY = "flow.v2";
+const W = 160, H = 64, STEP = 180;
 const col = (i: number) => 16 + i * STEP;
 const OUTPUTS: Kind[] = ["webhook", "email", "download"];
 const OTHER = "*";
@@ -33,9 +33,10 @@ function initial(senders: string[]): Graph {
     const b = `branch:${s}`;
     nodes.push({ id: b, kind: "branch", sender: s, x: col(5), y });
     edges.push(["switch", b]);
-    // The first sender shows the two-webhook case: one into the team's own system, one into another party's.
+    // The first sender shows the two-webhook case: one into the team's own system, one into another party's. URLs start
+    // empty, so nothing is sent until someone sets one.
     const outs: Node[] = i === 0 && s !== OTHER
-      ? [{ id: `${b}:w1`, kind: "webhook", name: t("自己的 ERP", "Own ERP"), url: "https://erp.example.com/hooks/fobby", x: col(6), y }, { id: `${b}:w2`, kind: "webhook", name: t("報關行", "Customs broker"), url: "https://broker.example.com/in", x: col(6), y: y + H + 16 }]
+      ? [{ id: `${b}:w1`, kind: "webhook", name: t("自己的 ERP", "Own ERP"), url: "", x: col(6), y }, { id: `${b}:w2`, kind: "webhook", name: t("報關行", "Customs broker"), url: "", x: col(6), y: y + H + 16 }]
       : s === OTHER ? [{ id: `${b}:e`, kind: "email", to: "ops@example.com", x: col(6), y }, { id: `${b}:d`, kind: "download", x: col(6), y: y + H + 16 }]
         : [{ id: `${b}:d`, kind: "download", x: col(6), y }];
     outs.forEach((o) => { nodes.push(o); edges.push([b, o.id]); });
@@ -44,18 +45,30 @@ function initial(senders: string[]): Graph {
   return { nodes, edges, autoSend: true };
 }
 
-const load = (): Graph | null => { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) as Graph : null; } catch { return null; } };
-const store = (g: Graph) => { try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* the layout is a per-browser convenience */ } };
+const fresh = () => api<SenderInfo[]>("/api/senders").then((s) => initial(s.map((x) => x.sender)), () => initial([]));
 
 export function Flow() {
   useLang();
-  const [g, setG] = useState<Graph | null>(load);
+  const [g, setG] = useState<Graph | null>(null);
+  const [secret, setSecret] = useState("");
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved" | { error: unknown }>("idle");
   const [sel, setSel] = useState<string | null>(null);
+  // What the server has, so opening the screen does not write it back; a flow the server lacks is saved at once.
+  const stored = useRef("");
   useEffect(() => {
-    if (g) return;
-    api<SenderInfo[]>("/api/senders").then((s) => setG(initial(s.map((x) => x.sender))), () => setG(initial([])));
+    api<{ graph: Graph | null; secret: string }>("/api/flow")
+      .then(async (f) => { setSecret(f.secret); if (f.graph) stored.current = JSON.stringify(f.graph); setG(f.graph ?? await fresh()); }, async () => setG(await fresh()));
+  }, []);
+  // Saved a moment after the last change, so dragging a node is one write, not one per pixel.
+  useEffect(() => {
+    if (!g || JSON.stringify(g) === stored.current) return;
+    setSaved("saving");
+    const timer = setTimeout(() => {
+      request("/api/flow", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ graph: g }) })
+        .then(() => { stored.current = JSON.stringify(g); setSaved("saved"); }, (e) => setSaved({ error: e }));
+    }, 600);
+    return () => clearTimeout(timer);
   }, [g]);
-  useEffect(() => { if (g) store(g); }, [g]);
 
   if (!g) return <p className="text-muted-foreground">{t("載入中…", "Loading…")}</p>;
   const selected = g.nodes.find((n) => n.id === sel) ?? null;
@@ -83,14 +96,17 @@ export function Flow() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground">{t("新增出口：", "Add output: ")}</span>
           {OUTPUTS.map((k) => <Button key={k} size="sm" variant="outline" onClick={() => add(k)}>+ {kindName(k)}</Button>)}
-          <Button size="sm" variant="ghost" onClick={() => { try { localStorage.removeItem(KEY); } catch { /* nothing stored */ } setG(null); setSel(null); }}>{t("重設", "Reset")}</Button>
+          <Button size="sm" variant="ghost" onClick={async () => { setSel(null); setG(await fresh()); }}>{t("重設", "Reset")}</Button>
+          <span role="status" className="text-[13px] text-muted-foreground">
+            {saved === "saving" ? t("儲存中…", "Saving…") : saved === "saved" ? t("已儲存", "Saved") : typeof saved === "object" ? errorMessage(saved.error) : ""}
+          </span>
         </div>
       </div>
 
       {/* The canvas needs the full width for seven columns, so the settings go under it. */}
       <div className="grid items-start gap-4">
         <Canvas g={g} sel={sel} onSelect={setSel} onMove={(id, x, y) => patch(id, { x, y })} />
-        <Inspector g={g} node={selected} onPatch={patch} onRemove={remove} onAutoSend={(v) => setG({ ...g, autoSend: v })} />
+        <Inspector g={g} node={selected} secret={secret} onPatch={patch} onRemove={remove} onAutoSend={(v) => setG({ ...g, autoSend: v })} />
       </div>
     </>
   );
@@ -104,16 +120,44 @@ const sub = (n: Node) => {
   switch (n.kind) {
     case "intake": return t("上傳 PDF・email（即將推出）", "PDF upload, email (coming)");
     case "read": return t("Meta 模型讀出每個欄位", "Meta model reads every field");
-    case "check": return t("Jev 拿原文逐一核對", "Jev checks each value against the page");
+    case "check": return t("Jev 逐一核對（認得的廠商）", "Jev checks each value (known senders)");
     case "approve": return t("全部通過自動確認，否則人工", "Automatic when all pass, else a person");
     case "switch": return t("寄件公司 =", "Sender =");
     case "branch": return n.sender === OTHER ? t("其他所有廠商", "Every other sender") : n.sender!;
-    case "webhook": return n.name ?? "";
+    case "webhook": return n.url ? n.name ?? "" : t(`${n.name ?? ""}（未設定網址）`, `${n.name ?? ""} (no URL yet)`);
     case "email": return n.to || t("（未設定收件人）", "(no recipient yet)");
     case "download": return t("JSON・CSV", "JSON, CSV");
   }
 };
-const live = (k: Kind) => k !== "webhook" && k !== "email";
+const live = (k: Kind) => k !== "email";
+
+/** One delivery: who got it, the status code they answered and their receipt id. */
+export function DeliveryRow({ d }: { d: Delivery }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b py-1.5 text-[13px] last:border-b-0">
+      <span className={cn("rounded-full px-1.5 font-mono text-[11px]", d.ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}>{d.status ?? t("沒送到", "failed")}</span>
+      <b>{d.name}</b>
+      <span className="text-muted-foreground">{d.event}</span>
+      <span className="text-muted-foreground">{d.receipt ? t(`收據 ${d.receipt}`, `receipt ${d.receipt}`) : d.ok ? t("對方沒回收據編號", "no receipt id returned") : d.error ?? ""}</span>
+      <span className="ml-auto text-muted-foreground">{when(d.at)}・{d.ms} ms</span>
+    </li>
+  );
+}
+
+function TestSend({ node }: { node: Node }) {
+  const [state, setState] = useState<"idle" | "busy" | Delivery | { error: unknown }>("idle");
+  useEffect(() => setState("idle"), [node.id]);
+  const go = async () => {
+    setState("busy");
+    try { setState(await post<Delivery>("/api/flow/test", { name: node.name, url: node.url })); } catch (e) { setState({ error: e }); }
+  };
+  return (
+    <div className="mb-3">
+      <Button size="sm" variant="outline" disabled={!node.url?.trim() || state === "busy"} onClick={go}>{state === "busy" ? t("送出中…", "Sending…") : t("送一筆測試", "Send a test event")}</Button>
+      {typeof state === "object" && ("error" in state ? <p className="mt-1 text-[13px] text-warn">{errorMessage(state.error)}</p> : <ul className="mt-1 list-none p-0"><DeliveryRow d={state} /></ul>)}
+    </div>
+  );
+}
 
 function Canvas({ g, sel, onSelect, onMove }: { g: Graph; sel: string | null; onSelect: (id: string) => void; onMove: (id: string, x: number, y: number) => void }) {
   const box = useRef<HTMLDivElement>(null);
@@ -169,16 +213,16 @@ function Canvas({ g, sel, onSelect, onMove }: { g: Graph; sel: string | null; on
   );
 }
 
-function Inspector({ g, node, onPatch, onRemove, onAutoSend }: {
-  g: Graph; node: Node | null; onPatch: (id: string, p: Partial<Node>) => void; onRemove: (id: string) => void; onAutoSend: (v: boolean) => void;
+function Inspector({ g, node, secret, onPatch, onRemove, onAutoSend }: {
+  g: Graph; node: Node | null; secret: string; onPatch: (id: string, p: Partial<Node>) => void; onRemove: (id: string) => void; onAutoSend: (v: boolean) => void;
 }) {
   const field = "mb-3 block text-sm";
   return (
     <Card className={cn(SECTION, "mb-0")}>
       <label className="mb-4 flex items-start gap-2 text-sm">
         <input type="checkbox" className="mt-1" checked={g.autoSend} onChange={(e) => onAutoSend(e.target.checked)} />
-        <span><b>{t("自動確認的文件直接送出", "Send automatically approved documents right away")}</b><br />
-          <span className="text-muted-foreground">{t("關掉的話，自動確認的文件會停在清單等人按送出。", "When off, automatically approved documents wait in the list for someone to send them.")}</span></span>
+        <span><b>{t("確認後直接送出（人工確認和自動確認都算）", "Send as soon as a document is approved, by a person or automatically")}</b><br />
+          <span className="text-muted-foreground">{t("關掉的話，確認後的文件等人在文件頁按「送到 Webhook」。", "When off, approved documents wait for someone to press Send to webhooks on the document page.")}</span></span>
       </label>
       {!node && <p className="text-sm text-muted-foreground">{t("點流程圖上的節點來設定。選一家廠商再按「新增出口」，出口會接在那家下面。", "Click a node to set it up. Select a sender, then Add output to attach it there.")}</p>}
       {node && (
@@ -192,11 +236,13 @@ function Inspector({ g, node, onPatch, onRemove, onAutoSend }: {
             <>
               <label className={field}>{t("名稱", "Name")}<Input value={node.name ?? ""} onChange={(e) => onPatch(node.id, { name: e.target.value })} /></label>
               <label className={field}>{t("網址", "URL")}<Input value={node.url ?? ""} placeholder="https://" onChange={(e) => onPatch(node.id, { url: e.target.value })} /></label>
+              <TestSend node={node} />
               <ul className="mb-3 list-disc pl-5 text-[13px] text-muted-foreground">
-                <li>{t("每次送出用這個出口的密鑰簽章，對方可以驗證是我們送的。", "Every delivery is signed with this output's key, so the receiver can verify it came from us.")}</li>
-                <li>{t("對方回 2xx 並帶 receipt_id 才算「已收到」；沒回就重試，失敗會通知你。", "It counts as received only when the receiver answers 2xx with a receipt_id; otherwise it retries and tells you if it fails.")}</li>
-                <li>{t("事後改過的文件會送一次更正版。", "A document corrected afterwards is sent again as a correction.")}</li>
+                <li>{t("確認後的完整資料（跟下載的 JSON 一樣）用 POST 送出，事件是 document.approved；事後改過再確認的送 document.corrected。", "The approved record (the same JSON as the download) is POSTed as document.approved; one corrected and approved again goes as document.corrected.")}</li>
+                <li>{t("每次都附簽章：X-Fobby-Signature 是 sha256=HMAC(密鑰, 時間戳記.內容)，時間戳記在 X-Fobby-Timestamp。對方可以驗證是我們送的。", "Every delivery is signed: X-Fobby-Signature is sha256=HMAC(secret, timestamp.body), with the timestamp in X-Fobby-Timestamp, so the receiver can verify it came from us.")}</li>
+                <li>{t("對方回 2xx 算送達；回應 JSON 裡的 receipt_id（或 X-Receipt-Id 標頭）記成收據編號。重試還沒做。", "A 2xx answer counts as delivered; receipt_id in the JSON answer (or an X-Receipt-Id header) is kept as the receipt. Retries are not built yet.")}</li>
               </ul>
+              <p className="mb-3 text-[13px]">{t("簽章密鑰：", "Signing secret: ")}<code className="break-all select-all">{secret}</code></p>
             </>
           )}
           {node.kind === "email" && <label className={field}>{t("收件人", "Recipient")}<Input value={node.to ?? ""} placeholder="ops@example.com" onChange={(e) => onPatch(node.id, { to: e.target.value })} /></label>}
@@ -205,7 +251,7 @@ function Inspector({ g, node, onPatch, onRemove, onAutoSend }: {
           {OUTPUTS.includes(node.kind) && (
             <>
               <h4 className="mt-2 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h4>
-              <p className="mb-3 text-[13px] text-muted-foreground">{live(node.kind) ? t("下載不留紀錄。", "Downloads are not logged.") : t("上線後這裡列出每次送出、對方回的收據編號和重試狀態。", "Once live, every delivery, the receiver's receipt id and retries show here.")}</p>
+              <p className="mb-3 text-[13px] text-muted-foreground">{node.kind === "download" ? t("下載不留紀錄。", "Downloads are not logged.") : node.kind === "webhook" ? t("每份文件送出的狀態碼和收據編號，列在那份文件的頁面上。", "Each document's status codes and receipt ids are listed on its page.") : t("上線後這裡列出每次寄出。", "Once live, every email sent shows here.")}</p>
               <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>
             </>
           )}

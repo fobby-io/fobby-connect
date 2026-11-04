@@ -4,6 +4,7 @@ import type { Page } from "../src/profiles/loop.ts";
 import { checkDocument } from "../src/rules/checks.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 import { verifyDocument, type Decide } from "../src/verify/jev.ts";
+import { checkUrl, deliver, sign, targets, type Graph } from "../src/server/webhook.ts";
 
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
 const { createApp } = await import("../src/server/app.ts");
@@ -53,16 +54,19 @@ function setup(decide?: Decide) {
 
 describe("second system and automatic approval", () => {
   it("sends a new sender to review, then approves its next verified document without a person", async () => {
-    const { decide } = jev();
+    const { decide, asked } = jev();
     const t = setup(decide);
     const first = await t.open();
     expect(first.approved).toBeNull();
     expect(first.auto.reasons).toEqual(["unknown_sender"]);
-    expect(first.verify).toMatchObject({ flagged: 0, unchecked_pages: 0 });
+    // A person reviews a first document anyway, so the second system is not paid for it.
+    expect(first.verify).toBeNull();
+    expect(asked).toHaveLength(0);
     await t.approve(first.id);
 
     const second = await t.open();
     expect(second.auto).toEqual({ ok: true, reasons: [] });
+    expect(second.verify).toMatchObject({ flagged: 0, unchecked_pages: 0 });
     expect(second.approved.sender).toBe("ACME");
     expect(second.approved.corrected).toBe(0);
     const list = await t.call("/api/documents");
@@ -128,6 +132,71 @@ describe("verifyDocument", () => {
 
   it("counts values under the pass mark as flagged", async () => {
     expect((await verifyDocument(jev(0.2).decide, [pageInput()], [page()])).flagged).toBe(2);
+  });
+});
+
+describe("webhooks", () => {
+  const graph = (url: string, autoSend = true): Graph => ({
+    autoSend,
+    nodes: [
+      { id: "switch", kind: "switch", x: 0, y: 0 },
+      { id: "b:acme", kind: "branch", sender: "ACME", x: 0, y: 0 }, { id: "b:acme:w", kind: "webhook", name: "ERP", url, x: 0, y: 0 },
+      { id: "b:*", kind: "branch", sender: "*", x: 0, y: 0 }, { id: "b:*:d", kind: "download", x: 0, y: 0 },
+    ],
+    edges: [["switch", "b:acme"], ["b:acme", "b:acme:w"], ["switch", "b:*"], ["b:*", "b:*:d"]],
+  });
+  // The receiver: answers 200 with a receipt and keeps every request.
+  const receiver = () => {
+    const got: { url: string; headers: Headers; body: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      got.push({ url, headers: new Headers(init.headers), body: String(init.body) });
+      return new Response(JSON.stringify({ receipt_id: `r${got.length}` }), { status: 200 });
+    });
+    return got;
+  };
+
+  it("routes a sender to its branch's webhooks, others to the catch-all, and skips empty URLs", () => {
+    const g = graph("https://erp.test/in");
+    expect(targets(g, "acme")).toEqual([{ name: "ERP", url: "https://erp.test/in" }]);
+    expect(targets(g, "OTHER CO")).toEqual([]);
+    expect(targets(graph(" "), "ACME")).toEqual([]);
+  });
+
+  it("refuses plain http and local addresses", () => {
+    expect(checkUrl("http://erp.test/in")).toMatch(/https/);
+    expect(checkUrl("https://127.0.0.1/in")).toMatch(/private/);
+    expect(checkUrl("https://localhost:8787/in")).toMatch(/private/);
+    expect(checkUrl("https://webhook.site/abc")).toBeNull();
+  });
+
+  it("signs the body, so the receiver can recompute the signature, and keeps the receipt", async () => {
+    const got = receiver();
+    const d = await deliver({ name: "ERP", url: "https://erp.test/in" }, "test", { a: 1 }, "whsec_x");
+    vi.unstubAllGlobals();
+    expect(d).toMatchObject({ ok: true, status: 200, receipt: "r1" });
+    const h = got[0]!.headers;
+    expect(h.get("x-fobby-signature")).toBe(`sha256=${await sign("whsec_x", h.get("x-fobby-timestamp")!, got[0]!.body)}`);
+    expect(JSON.parse(got[0]!.body)).toMatchObject({ id: d.id, event: "test", data: { a: 1 } });
+  });
+
+  it("sends approved documents of a sender with a webhook, and a re-approval as a correction", async () => {
+    const got = receiver();
+    const t = setup(jev().decide);
+    const flow = await t.call("/api/flow");
+    expect(flow.secret).toMatch(/^whsec_/);
+    await t.call("/api/flow", { method: "PUT", body: JSON.stringify({ graph: graph("https://erp.test/in") }) });
+
+    const first = await t.open();
+    await t.approve(first.id);
+    const auto = await t.open();
+    expect(auto.deliveries).toMatchObject([{ event: "document.approved", ok: true, receipt: "r2" }]);
+    expect(JSON.parse(got[1]!.body).data).toMatchObject({ sender: "ACME", schema_version: 1 });
+
+    await t.post(`/api/documents/${auto.id}/reopen`);
+    await t.approve(auto.id);
+    const again = await t.call(`/api/documents/${auto.id}`);
+    vi.unstubAllGlobals();
+    expect(again.deliveries.map((x: { event: string }) => x.event)).toEqual(["document.corrected", "document.approved"]);
   });
 });
 

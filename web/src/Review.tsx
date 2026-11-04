@@ -162,7 +162,9 @@ export function Review({ doc, onApproved, onOpen }: {
         )}
         <div className={cn("mt-3.5 rounded-[10px] px-4 py-3", doubtCells.length + doubtVals.length ? "border border-warn-line bg-warn-bg" : v && !v.unchecked_pages ? "bg-ok-bg text-ok" : "border")}>
           <h3 className="mb-1 text-[15px] font-bold">{t("第二系統核對", "Second check")}</h3>
-          {!v && <p className="text-sm">{t("這份沒有經過第二系統核對，每個值都請你看過。", "This document was not checked by the second system; please look over every value.")}</p>}
+          {!v && <p className="text-sm">{doc.auto?.reasons.includes("unknown_sender")
+            ? t("這家的這種文件第一次出現，反正每個值都要你看過，所以不跑第二系統，省下核對費用。你確認後，下一份起每個值都會核對。", "The first document of this kind from this sender: you look over every value anyway, so the second system is not run and its cost is saved. From the next one, every value is checked.")
+            : t("這份沒有經過第二系統核對，每個值都請你看過。", "This document was not checked by the second system; please look over every value.")}</p>}
           {v && <p className="text-sm">{t(`第二系統（Jev）拿原文逐一核對了 ${v.checked} 個值，`, `The second system (Jev) checked ${v.checked} values against the printed text: `)}
             {doubtCells.length + doubtVals.length ? t(`${doubtCells.length + doubtVals.length} 個有疑慮，在下面標成橘色。`, `${doubtCells.length + doubtVals.length} doubtful, marked orange below.`) : t("全部通過。", "all passed.")}
             {v.unchecked_pages ? t(`另有 ${v.unchecked_pages} 頁沒有文字層或核對失敗，請你看過。`, ` ${v.unchecked_pages} page(s) had no text layer or could not be checked; please look them over.`) : ""}</p>}
