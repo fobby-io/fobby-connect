@@ -491,17 +491,20 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
     title = t("沒有經過人工，自動確認", "Approved without a person");
     body = <p>{t(`四個條件都成立：認得的廠商、欄位跟上一份一樣、第二系統核對 ${v?.checked ?? 0} 個值全部通過、自動檢查全部通過。`,
       `All four conditions held: a known sender, the same columns as last time, all ${v?.checked ?? 0} values passed the second check, and every rule passed.`)}</p>;
-  } else if (count === 1) {
-    title = t(`認得 ${a.sender} 了`, `${a.sender} is now known`);
-    body = <p>{t(`你沒有改任何值，這份就成為 ${a.sender} ${docType}的第一個範例，記下這家的欄位排列。`, `You changed nothing, so this document becomes the first example of how ${a.sender} lays out a ${kind}.`)}</p>;
-    next = t("下一份開始，第二系統會逐一核對每個值；全部通過就不用經過你。", "From the next one on, the second system checks every value; if all pass, it is approved without you.");
   } else {
-    title = t("照讀到的內容確認", "Approved as read");
-    body = <p>{t("你沒有改任何值，讀法維持不變，這份存成這家的範例。", "You changed nothing, so the reading stays as it is and this document is kept as an example.")}</p>;
-    if (count) next = t(`這家的${docType}已確認 ${count} 份，${active ? `用讀法第 ${active.version} 版` : "用通用讀法"}。`,
-      `${many(count, `approved ${kind}`)} from this sender so far, ${active ? `read with version ${active.version}` : "read with the general reading"}.`);
+    // Approved as read: nothing happened worth a card, only what it means for the next document.
+    title = "";
+    body = null;
   }
-  if (info?.hold) next = t("這家的自動確認暫停中：下一份人工審核完全沒改，就恢復。", "Automatic approval for this sender is paused until a reviewed document needs no change.");
+  const later = t("下一份會自動逐一核對每個值，全部通過就不用經過你。", "Next time, every value is checked automatically, and if all pass it is approved without you.");
+  let note: string | null = null;
+  if (tone === "plain" && count === 1) note = t(`這是 ${a.sender} 的第一份${docType}，版面已經記下。`, `This was the first ${kind} from ${a.sender}, and its layout is now saved. `) + later;
+  else if (tone === "plain" && count) note = t(`${a.sender} 的${docType}已確認 ${count} 份${active ? `，用這家專屬的第 ${active.version} 版讀法` : ""}。`,
+    `${many(count, kind)} from ${a.sender} approved so far${active ? `, read with its own version ${active.version}` : ""}. `) + later;
+  if (info?.hold) {
+    const paused = t(`${a.sender} 的自動確認暫停中：下一份人工審核完全沒改，就恢復。`, `Automatic approval for ${a.sender} is paused until a reviewed document needs no change.`);
+    if (tone === "plain") note = paused; else next = paused;
+  }
 
   const stats: [number, string][] = [[n.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("gw_kg"), t("毛重 kg", "gross kg")]];
   if (v) stats.push([v.checked, t("個值核對過", "values checked")]);
@@ -531,13 +534,21 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
             </div>
           ))}
         </dl>
+        {note && (
+          <p className="mt-4 flex items-start gap-2 rounded-xl bg-accent px-3.5 py-2.5 text-sm">
+            <Icon d={ICON.spark} className="mt-0.5 text-primary" />
+            <span>{note}</span>
+          </p>
+        )}
       </Card>
 
-      <Card className={cn("gap-0 p-6", tone === "ok" && "bg-ok-bg/80", tone === "warn" && "bg-warn-bg/80")}>
-        <h2 className={cn("mb-2 text-lg font-semibold", tone === "ok" && "text-ok", tone === "warn" && "text-warn")}>{title}</h2>
-        <div className="text-[15px]">{body}</div>
-        {next && <p className="mt-3 text-sm text-muted-foreground">{next}</p>}
-      </Card>
+      {tone !== "plain" && (
+        <Card className={cn("gap-0 p-6", tone === "ok" && "bg-ok-bg/80", tone === "warn" && "bg-warn-bg/80")}>
+          <h2 className={cn("mb-2 text-lg font-semibold", tone === "ok" && "text-ok", tone === "warn" && "text-warn")}>{title}</h2>
+          <div className="text-[15px]">{body}</div>
+          {next && <p className="mt-3 text-sm text-muted-foreground">{next}</p>}
+        </Card>
+      )}
 
       {a.approved_at && <Approved {...approvedData} onViewPdf={() => setPdf(true)} />}
 
