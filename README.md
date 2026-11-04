@@ -35,7 +35,20 @@ Customer documents are only sent to the standard tier, whose data is not used to
 
 ## Built during the hackathon
 
-Everything in this repository was written between 2026-10-27 and 2026-11-04 (see the git history). Nothing from fobby.io, the author's freight-quote product, is used. Details: [docs/submission-scope.md](docs/submission-scope.md).
+Everything in this repository was written between 2026-10-27 and 2026-11-04 (see the git history). Nothing from fobby.io, the author's freight-quote product, is used. Meta Global AI Developer Hackathon, Startups track, "Build for Your World".
+
+| Part | Code |
+|---|---|
+| Meta Model API client, strict JSON schema output, retries, cost ledger | `src/gateway/` |
+| Page routing (text or vision) and reading loop: read, check, re-read with hints, read a missing column | `src/pipeline/` |
+| Prompt hierarchy (fallback, document class, sender) and learning from corrections with replay validation | `src/profiles/` |
+| Normalization to typed values with raw text kept | `src/normalize/`, `src/transforms/`, `src/reference/` |
+| Checks across rows, totals, pages and containers | `src/rules/` |
+| Review API for Node and Cloudflare Workers | `src/server/` |
+| Review screen (React, shadcn/ui, pdf.js) | `web/` |
+| Synthetic document generator, evaluation and samples | `eval/`, `scripts/` |
+
+Sample and test documents are synthetic: invented companies, numbers and products.
 
 ## Licence
 
