@@ -415,7 +415,16 @@ function Export({ doc }: { doc: Doc }) {
 function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void }) {
   useLang();
   const { FIELD, HEAD, TOTAL } = labels();
-  const a = doc.approved!, l = a.learn, auto = !!doc.auto?.ok;
+  const a = doc.approved!, auto = !!doc.auto?.ok;
+  // Learning runs on the server after the approval; this page asks again until it has ended.
+  const [l, setL] = useState(a.learn);
+  useEffect(() => {
+    if (l.outcome !== "pending") return;
+    const timer = setInterval(() => {
+      api<Doc>(`/api/documents/${doc.id}`).then((d) => { if (d.approved && d.approved.learn.outcome !== "pending") setL(d.approved.learn); }, () => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [doc.id, l.outcome]);
   const [info, setInfo] = useState<SenderInfo | null>(null);
   const [reopen, setReopen] = useState<"idle" | "busy" | { error: unknown }>("idle");
   useEffect(() => { api<SenderInfo[]>("/api/senders").then((s) => setInfo(s.find((x) => x.sender === a.sender) ?? null), () => {}); }, [a.sender]);
@@ -435,8 +444,16 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   };
 
   // What happened to this sender's reading is the point of this screen, so it comes first.
-  let tone: "ok" | "warn" | "plain" = "plain", title: string, body: ReactNode, next: string | null = null;
-  if (l.outcome === "activated") {
+  let tone: "ok" | "warn" | "info" | "plain" = "plain", title: string, body: ReactNode, next: string | null = null;
+  if (l.outcome === "pending") {
+    tone = "info";
+    title = t("正在從你的修正學習", "Learning from your corrections");
+    body = <p>{t("在背景重讀這家已確認的文件，確認新的讀法比較好才換上，約 1 到 3 分鐘。你可以繼續處理下一份，這裡會自己更新。", "Re-reading this sender's approved documents in the background; the new reading is used only if it does better. About 1 to 3 minutes. Carry on with the next document; this updates by itself.")}</p>;
+  } else if (l.outcome === "failed") {
+    tone = "warn";
+    title = t("這次的學習沒有完成", "Learning did not finish this time");
+    body = <p>{t("確認和匯出不受影響；這家的讀法維持原樣。", "The approval and exports stand; this sender is read as before.")}</p>;
+  } else if (l.outcome === "activated") {
     const before = l.scores.current.reduce((x, y) => x + y, 0), after = l.scores.candidate.reduce((x, y) => x + y, 0);
     tone = "ok";
     title = t("從你的修正學到了", "Learned from your corrections");
@@ -465,6 +482,11 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   if (info?.hold) {
     const paused = t(`${a.sender} 的自動確認暫停中`, `Automatic approval for ${a.sender} is paused`);
     if (tone === "plain") note = paused; else next = paused;
+  }
+  // Corrections the printed text does not explain are not learned from: they point at a conversion rule.
+  if (a.rules) {
+    const rules = t(`${a.rules} 個修正是換算規則的問題（原文沒讀錯），已記下待查，不拿來學習。`, `${a.rules === 1 ? "1 correction is" : `${a.rules} corrections are`} about a conversion rule (the printed text was read right): noted for a fix, not learned from.`);
+    note = note ? `${note}。${rules}` : rules;
   }
 
   const stats: [number, string][] = [[n.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("gw_kg"), t("毛重 kg", "gross kg")]];

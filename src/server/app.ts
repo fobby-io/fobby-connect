@@ -7,7 +7,7 @@ import { CreditExhausted, creditGuard } from "../gateway/credit.ts";
 import { gateway } from "../gateway/gateway.ts";
 import { dbLedger, type ApprovedRef, type Db } from "./db.ts";
 import type { MetaClient } from "../gateway/meta-client.ts";
-import { applyFixes, normalize, type Fixes, type NormDoc } from "../normalize/normalize.ts";
+import { applyFixes, learnable, normalize, type Fixes, type NormDoc } from "../normalize/normalize.ts";
 import { matchSender, preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
 import { diff, learn, memoryStore, seed, type Approved, type Page, type PromptVersion, type Store } from "../profiles/loop.ts";
 import { museRewrite } from "../profiles/rewrite.ts";
@@ -32,6 +32,8 @@ export type Deps = {
   files: Files; db: Db; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string;
   /** Model-backed actions allowed per UTC day (a document read, a column re-read, a corrected approval); none means no cap. */
   dailyReads?: number;
+  /** Keeps work going after the answer (a Worker passes ctx.waitUntil); without it the work runs on in this process. Learning that is cut off is picked up by retry(). */
+  background?: (p: Promise<unknown>) => void;
 };
 /** Why a document was not approved automatically; empty when it was. */
 export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged" | "findings" | "layout_changed" | "reopened";
@@ -39,7 +41,8 @@ export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged
 export type Saved = {
   id: string; name: string; run: RunResult; pages: PageInput[]; created_at?: string; verify?: Verification;
   auto?: { ok: boolean; reasons: AutoReason[] }; deliveries?: Delivery[]; source?: { via: "email"; from: string; subject: string };
-  approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string };
+  // learn is { outcome: "pending" } until the background run ends; rules counts corrections listed for the rules.
+  approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string; rules?: number };
 };
 export type ListedDoc = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
@@ -171,19 +174,55 @@ export function createApp(deps: Deps) {
     if (!(await db.markApproved(sp, d.id, approved_at))) return null;
     try {
       const model = d.run.pages.map((p) => p.output);
-      const misread = diff(model, answer).length;
-      // Corrected values count as corrections; only corrected printed text teaches the reader, and calls a model.
-      const corrected = misread + Object.keys(fixes).length;
+      // A corrected value that is a misread goes back into the printed text, which is what the reader learns from;
+      // the others are listed for the rules. Every one counts as a correction.
+      const l = learnable(answer, fixes);
+      const misread = diff(model, l.answer).length;
+      const corrected = diff(model, answer).length + Object.keys(fixes).length;
       if (misread) await spend("learn");
       await db.putValues(sp, d.id, toValues(values));
-      const result = await withStore((s) => learn(s, {
-        doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
-      }, replayReader(g, s), museRewrite(client)));
-      d.approved = { sender, learn: result, corrected, answer, approved_at };
+      await db.putRuleReviews(sp, d.id, l.review);
+      const doc = { doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer: l.answer, model };
+      // Nothing misread: only the example is kept, no model call, so it is done now. Otherwise re-reading the sender's
+      // approved documents takes minutes and runs after the answer (startLearn, once the document is saved).
+      const learnt = misread ? { outcome: "pending" } : await withStore((s) => learn(s, doc, replayReader(g, s), museRewrite(client)));
+      if (misread) await db.queueLearn(sp, d.id);
+      d.approved = { sender, learn: learnt, corrected, answer: l.answer, approved_at, rules: l.review.length };
       return d.approved;
     } catch (e) {
       await db.clearApproved(sp, d.id);
       throw e;
+    }
+  }
+
+  // Learning a claim older than this is taken to have died with its worker and is run again.
+  const LEARN_STALE_MS = 5 * 60_000, LEARN_TRIES = 3;
+  async function runLearn(id: string, now = new Date()) {
+    const sp = await space();
+    if (!(await db.claimLearn(sp, id, now.toISOString(), new Date(now.getTime() - LEARN_STALE_MS).toISOString()))) return;
+    const d = await load(id).catch(() => null);
+    // Reopened or deleted since: nothing to learn from.
+    if (!d?.approved?.answer || (d.approved.learn as { outcome?: string })?.outcome !== "pending") return db.dropLearn(sp, id);
+    const result = await withStore((s) => learn(s, {
+      doc_id: d.id, sender: d.approved!.sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer: d.approved!.answer!, model: d.run.pages.map((p) => p.output),
+    }, replayReader(g, s), museRewrite(client)));
+    // Read again: the document may have been reopened while this ran.
+    const now2 = await load(id).catch(() => null);
+    if (now2?.approved) { now2.approved.learn = result; await save(now2); }
+    await db.dropLearn(sp, id);
+  }
+  // A failed run stays claimed; retry() takes it again once stale, and gives up after LEARN_TRIES.
+  const startLearn = (id: string) => (deps.background ?? ((p) => void p))(runLearn(id).catch((e) => console.warn("learn:", (e as Error).message)));
+  async function learnDue(now: Date) {
+    const sp = await space();
+    for (const j of await db.dueLearns(sp, new Date(now.getTime() - LEARN_STALE_MS).toISOString())) {
+      if (j.tries >= LEARN_TRIES) {
+        const d = await load(j.doc_id).catch(() => null);
+        if (d?.approved) { d.approved.learn = { outcome: "failed" }; await save(d); }
+        await db.dropLearn(sp, j.doc_id);
+        continue;
+      }
+      await runLearn(j.doc_id, now).catch((e) => console.warn("learn:", (e as Error).message));
     }
   }
 
@@ -239,6 +278,8 @@ export function createApp(deps: Deps) {
 
   /** Tries again every failed delivery that is due. The host calls this on a timer, about once a minute. */
   async function retry(now = new Date()) {
+    // Learning that was cut off (a Worker ends after its answer) runs here, every minute.
+    await learnDue(now);
     const sp = await space();
     const due = await db.dueRetries(sp, now.toISOString());
     const flow = await getFlow();
@@ -428,7 +469,8 @@ export function createApp(deps: Deps) {
       if (a.corrected === 0) await setHold(sender, false);
       await autoSend(d);
       await save(d);
-      return json(200, { corrected: a.corrected, learn: a.learn, approved_at: a.approved_at, spent: spent() });
+      if ((a.learn as { outcome?: string }).outcome === "pending") startLearn(d.id);
+      return json(200, { corrected: a.corrected, learn: a.learn, rules: a.rules ?? 0, approved_at: a.approved_at, spent: spent() });
     }
     // Send an approved document to its sender's webhooks now, whether or not the flow sends automatically.
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/send$/))) {

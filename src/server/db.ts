@@ -1,6 +1,6 @@
 // Data lives here: what is queried, changed and written at once. Files (R2 on a host) keep PDFs, read results, example contents and request bodies.
 // Plain Postgres through Drizzle only (no provider features), so the host can be any Postgres.
-import { and, desc, eq, inArray, isNull, lte, sql, sum } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql, sum } from "drizzle-orm";
 import { boolean, date, doublePrecision, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { Ledger, LedgerEntry } from "../gateway/ledger.ts";
@@ -69,6 +69,18 @@ export const docRows = pgTable("doc_rows", {
   qty_per_pkg: numeric(), qty: numeric(), qty_unit: text(), nw_kg: numeric(), gw_kg: numeric(), cbm: numeric(),
 }, (t) => [primaryKey({ columns: [t.space_id, t.doc_id, t.page, t.row] })]);
 
+// Learning from an approved document's corrections runs after the approval answers: a job per document, claimed by
+// one worker at a time; a claim older than a few minutes (the worker died) is taken again.
+export const learnJobs = pgTable("learn_jobs", {
+  space_id: text().notNull(), doc_id: text().notNull(), started_at: text(), tries: integer().notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.space_id, t.doc_id] })]);
+
+// A corrected value that the printed text does not explain: the rule that turned the text into a value needs a look.
+export const ruleReviews = pgTable("rule_reviews", {
+  space_id: text().notNull(), doc_id: text().notNull(), key: text().notNull(),
+  printed: text(), read: text(), fixed: text(),
+}, (t) => [primaryKey({ columns: [t.space_id, t.doc_id, t.key] })]);
+
 /** Field values only; the printed text each came from stays in the document's read result. */
 export type DocValues = {
   header: Record<string, string | null>;
@@ -113,6 +125,14 @@ export interface Db {
   /** Replaces the document's standard record at once. */
   putValues(space: string, id: string, v: DocValues): Promise<void>;
   getValues(space: string, id: string): Promise<DocValues | null>;
+  /** Replaces the document's rule review rows. */
+  putRuleReviews(space: string, id: string, rows: { key: string; printed: string | null; read: string | null; fixed: string | null }[]): Promise<void>;
+  queueLearn(space: string, id: string): Promise<void>;
+  /** Jobs not started, or started before staleBefore, with how often they were tried. */
+  dueLearns(space: string, staleBefore: string): Promise<{ doc_id: string; tries: number }[]>;
+  /** True for the one caller that took the job. */
+  claimLearn(space: string, id: string, now: string, staleBefore: string): Promise<boolean>;
+  dropLearn(space: string, id: string): Promise<void>;
   queueRetry(space: string, r: RetryRow): Promise<void>;
   dropRetry(space: string, delivery_id: string): Promise<void>;
   dueRetries(space: string, now: string): Promise<RetryRow[]>;
@@ -145,6 +165,8 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
         await tx.delete(retries).where(and(eq(retries.space_id, space), eq(retries.doc_id, id)));
         await tx.delete(docRows).where(and(eq(docRows.space_id, space), eq(docRows.doc_id, id)));
         await tx.delete(docHeader).where(and(eq(docHeader.space_id, space), eq(docHeader.doc_id, id)));
+        await tx.delete(learnJobs).where(and(eq(learnJobs.space_id, space), eq(learnJobs.doc_id, id)));
+        await tx.delete(ruleReviews).where(and(eq(ruleReviews.space_id, space), eq(ruleReviews.doc_id, id)));
         await tx.delete(documents).where(one(space, id));
       });
     },
@@ -209,6 +231,28 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
       const rows = await db.select().from(docRows).where(and(eq(docRows.space_id, space), eq(docRows.doc_id, id))).orderBy(docRows.page, docRows.row);
       const { space_id: _, doc_id: __, ...header } = h;
       return { header, rows: rows.map(({ space_id: _, doc_id: __, ...r }) => r) };
+    },
+    async putRuleReviews(space, id, rows) {
+      await db.transaction(async (tx) => {
+        await tx.delete(ruleReviews).where(and(eq(ruleReviews.space_id, space), eq(ruleReviews.doc_id, id)));
+        if (rows.length) await tx.insert(ruleReviews).values(rows.map((r) => ({ ...r, space_id: space, doc_id: id })));
+      });
+    },
+    async queueLearn(space, id) {
+      await db.insert(learnJobs).values({ space_id: space, doc_id: id }).onConflictDoUpdate({ target: [learnJobs.space_id, learnJobs.doc_id], set: { started_at: null, tries: 0 } });
+    },
+    async dueLearns(space, staleBefore) {
+      return await db.select({ doc_id: learnJobs.doc_id, tries: learnJobs.tries }).from(learnJobs)
+        .where(and(eq(learnJobs.space_id, space), or(isNull(learnJobs.started_at), lt(learnJobs.started_at, staleBefore))));
+    },
+    async claimLearn(space, id, now, staleBefore) {
+      const r = await db.update(learnJobs).set({ started_at: now, tries: sql`${learnJobs.tries} + 1` })
+        .where(and(eq(learnJobs.space_id, space), eq(learnJobs.doc_id, id), or(isNull(learnJobs.started_at), lt(learnJobs.started_at, staleBefore))))
+        .returning({ id: learnJobs.doc_id });
+      return r.length > 0;
+    },
+    async dropLearn(space, id) {
+      await db.delete(learnJobs).where(and(eq(learnJobs.space_id, space), eq(learnJobs.doc_id, id)));
     },
     async queueRetry(space, r) {
       await db.insert(retries).values({ space_id: space, ...r }).onConflictDoUpdate({ target: [retries.space_id, retries.delivery_id], set: { doc_id: r.doc_id, due: r.due } });

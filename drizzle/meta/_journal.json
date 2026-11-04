@@ -29,6 +29,13 @@
       "when": 1793814448795,
       "tag": "0003_standard_record",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793815879929,
+      "tag": "0004_learn_jobs_and_rule_reviews",
+      "breakpoints": true
     }
   ]
 }

@@ -92,8 +92,8 @@ export function Review({ doc, onApproved }: {
     if (!sender.trim()) return senderInput.current?.focus();
     setApproval({ busy: true });
     try {
-      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current, fixes: fixesRef.current });
-      onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected, approved_at: j.approved_at } });
+      const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string; rules?: number }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current, fixes: fixesRef.current });
+      onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected, approved_at: j.approved_at, rules: j.rules } });
     } catch (e) {
       setApproval({ error: e });
     }
@@ -101,9 +101,7 @@ export function Review({ doc, onApproved }: {
 
   if (approval && "busy" in approval)
     return (
-      <Busy title={n ? t("正在學習你的修正…", "Learning your corrections…") : t("存檔中…", "Saving…")}>
-        {n ? t("約 30 秒到 2 分鐘。", "About 30 seconds to 2 minutes.") : ""}
-      </Busy>
+      <Busy title={t("存檔中…", "Saving…")}>{""}</Busy>
     );
   if (approval)
     return (

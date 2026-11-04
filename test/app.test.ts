@@ -103,13 +103,27 @@ describe("createApp", () => {
 
     const ok = await (await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE], fixes }))).json();
     expect(ok.corrected).toBe(4);
+    // The cartons cell printed only "50": a misread, written back into the text the reader learns from, after the answer.
+    // Pallets, date and port have no printed text that reads as the corrected value: listed for the rules.
+    expect([ok.learn.outcome, ok.rules]).toEqual(["pending", 3]);
     const body = await (await call(app, `/api/documents/${doc.id}/export.json`)).json();
     expect([body.rows[0].pkgs.v, body.rows[0].pallets.v, body.header.pol.v]).toEqual(["48", "2", "TWKHH"]);
-    expect(body.rows[0].pkgs.raw).toBe("50"); // the printed text stays beside the corrected value
-    // Opened again, the page shows the stored values and starts from the same corrections.
+    expect(body.rows[0].pkgs.raw).toBe("48");
+    // This fake model cannot rewrite notes, so learning fails: the approval stands, the job is tried again once its
+    // claim is stale (retry() runs every minute) and marked failed after three tries.
+    const later = (min: number) => new Date(Date.now() + min * 60_000);
+    await vi.waitFor(async () => expect((await db.dueLearns(space, later(6).toISOString()))[0]?.tries).toBe(1));
+    expect((await call(app, `/api/documents/${doc.id}/export.json`)).status).toBe(200);
+    await app.retry(later(6));
+    await app.retry(later(12));
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved.learn.outcome).toBe("pending");
+    await app.retry(later(18));
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved.learn.outcome).toBe("failed");
+    expect(await db.dueLearns(space, later(60).toISOString())).toEqual([]);
+    // Opened again, the page shows the stored values and starts from the corrections the text does not give.
     const v = await (await call(app, `/api/documents/${doc.id}`)).json();
     expect(v.normalized.rows[0].pallets.v).toBe("2");
-    expect(v.fixes).toEqual({ "rows.1.0.pkgs": "48", "rows.1.0.pallets": "2", "header.doc_date": "2026-06-16", "header.pol": "TWKHH" });
+    expect(v.fixes).toEqual({ "rows.1.0.pallets": "2", "header.doc_date": "2026-06-16", "header.pol": "TWKHH" });
 
     await call(app, `/api/documents/${doc.id}`, { method: "DELETE" });
     expect(await db.getValues(space, doc.id)).toBeNull();

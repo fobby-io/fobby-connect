@@ -201,3 +201,83 @@ export function applyFixes(n: NormDoc, fixes: Fixes): { doc: NormDoc; bad: strin
   }
   return { doc, bad };
 }
+
+/** A corrected value that is not a misread of the printed text: the rule that turned the text into a value needs a look. */
+export type RuleReview = { key: string; printed: string | null; read: string | null; fixed: string | null };
+
+const TOKEN = /\d[\d,]*(?:\.\d+)?/g;
+// A row entry compared by its value (its printed text may change), or page and row as they are.
+const valueOf = (x: unknown) => (x && typeof x === "object" && "v" in x ? (x as V).v : x);
+// The printed column a row value is read from; values made from several (pallets, ranges) are not written back.
+const SOURCE: Record<string, string> = { pkgs: "pkg_qty", qty: "qty", qty_per_pkg: "qty", nw_kg: "nw_kg", gw_kg: "gw_kg", cbm: "cbm" };
+const NUMERIC_TOTAL = (k: string) => k.startsWith("total_") && k !== "total_pkgs_in_words";
+
+/** text with the one place that reads as was replaced by now, in the same style ("1,704.24" stays with commas and 2 decimals); null when not exactly one. */
+function swap(text: string, was: string, now: string, numeric: boolean): string | null {
+  if (numeric) {
+    const hits = [...text.matchAll(TOKEN)].filter((m) => parseNumber(m[0]) === was);
+    if (hits.length !== 1) return null;
+    const tok = hits[0]![0], at = hits[0]!.index!;
+    let s = new Decimal(now).toFixed(tok.split(".")[1]?.length ?? 0);
+    if (tok.includes(",")) s = s.replace(/^-?\d+/, (d) => d.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+    return text.slice(0, at) + s + text.slice(at + tok.length);
+  }
+  const i = text.indexOf(was);
+  if (i < 0 || text.indexOf(was, i + 1) >= 0) return null;
+  return text.slice(0, i) + now + text.slice(i + was.length);
+}
+
+/**
+ * Splits corrected values into misreads and rule gaps. A correction is written back into the printed text it was read
+ * from; when the text then reads as the corrected value and nothing else changes, the model misread it, and the
+ * corrected text is what the reader learns from. Anything else (a converted unit, a date or port written differently,
+ * a value made from several places) is listed for the rules instead, so the reader is not taught a rule's mistake.
+ */
+export function learnable(answer: Page[], fixes: Fixes): { answer: Page[]; learned: string[]; review: RuleReview[] } {
+  const out = structuredClone(answer), learned: string[] = [], review: RuleReview[] = [];
+  const read = normalize(answer), target = applyFixes(read, fixes).doc;
+  for (const key of Object.keys(fixes)) {
+    const [part, a, b, field] = key.split(".");
+    const before = normalize(out);
+    let was: V | undefined, now: string | null | undefined, cells: { get: () => string | null; set: (x: string | null) => void }[] = [], numeric = false;
+    let same: (n: NormDoc) => boolean = () => false;
+    if (part === "header" || part === "totals") {
+      const k = a!;
+      was = part === "header" ? read.header[k] : read.totals[k];
+      now = (part === "header" ? target.header[k] : target.totals[k])?.v;
+      const pi = part === "header" ? (read.header[k]?.page ?? 0) - 1 : out.map((p) => !!p.totals[k as keyof Page["totals"]]?.v).lastIndexOf(true);
+      const cell = pi < 0 ? null : (out[pi]![part] as Record<string, { v: string } | null>)[k];
+      if (cell) cells = [{ get: () => cell.v, set: (x) => { cell.v = x ?? ""; } }];
+      numeric = part === "totals" && NUMERIC_TOTAL(k);
+      const pick = (n: NormDoc) => (part === "header" ? n.header : n.totals);
+      same = (n) => pick(n)[k]?.v === now && Object.keys(pick(n)).every((x) => x === k || pick(n)[x]?.v === pick(before)[x]?.v);
+    } else if (part === "rows" && field && !field.endsWith("_range")) {
+      const page = Number(a), row = Number(b), p = out[page - 1];
+      const rowOf = (n: NormDoc) => n.rows.find((r) => r.page === page && r.row === row);
+      was = (rowOf(read) as unknown as Record<string, V> | undefined)?.[field];
+      now = (rowOf(target) as unknown as Record<string, V> | undefined)?.[field]?.v;
+      numeric = field in SOURCE;
+      const r = p?.rows[row];
+      if (r) cells = p!.columns.map((c, ci) => ({ c, ci })).filter(({ c }) => !numeric || c.field === SOURCE[field])
+        .map(({ ci }) => ({ get: () => r.cells[ci] ?? null, set: (x) => { r.cells[ci] = x; } }));
+      same = (n) => {
+        const x = rowOf(n) as unknown as Record<string, V> | undefined, y = rowOf(before) as unknown as Record<string, V> | undefined;
+        return !!x && !!y && x[field]?.v === now && Object.keys(x).every((k) => k === field || k === "box" || valueOf(x[k]) === valueOf(y[k]));
+      };
+    }
+    // Exactly one printed place holds the value as read, and writing the correction there reads back as it.
+    let ok = false;
+    if (was?.v && now) {
+      const places = cells.map((c) => ({ c, t: c.get() && swap(c.get()!, was!.v!, now!, numeric) })).filter((x) => x.t);
+      if (places.length === 1) {
+        const { c, t } = places[0]!, prev = c.get();
+        c.set(t!);
+        ok = same(normalize(out));
+        if (!ok) c.set(prev);
+      }
+    }
+    if (ok) learned.push(key);
+    else review.push({ key, printed: was?.raw ?? null, read: was?.v ?? null, fixed: fixes[key] ?? null });
+  }
+  return { answer: out, learned, review };
+}

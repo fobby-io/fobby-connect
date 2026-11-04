@@ -8,8 +8,10 @@ type Version = { version: number; notes: string[] };
 export type LearnResult =
   | { outcome: "no_change" }
   | { outcome: "activated"; version: Version; tries: number; scores: { candidate: number[]; current: number[] } }
-  | { outcome: "kept"; version: Version | null; always_review: string[]; tries: number };
-export type Approved = { sender: string; learn: LearnResult; corrected: number; approved_at?: string };
+  | { outcome: "kept"; version: Version | null; always_review: string[]; tries: number }
+  // Learning runs after the approval answers; failed after three tries.
+  | { outcome: "pending" } | { outcome: "failed" };
+export type Approved = { sender: string; learn: LearnResult; corrected: number; approved_at?: string; rules?: number };
 // What src/verify/jev.ts and src/server/app.ts return about the second system's check and automatic approval.
 export type PageCheck = { page_no: number; checked: boolean; values: Record<string, number>; rows: (number | null)[][] };
 export type Verification = { pages: PageCheck[]; checked: number; flagged: number; unchecked_pages: number; cost_usd: number; error?: string };

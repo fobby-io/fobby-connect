@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { marksPos, normalize } from "../src/normalize/normalize.ts";
+import { learnable, marksPos, normalize } from "../src/normalize/normalize.ts";
 import { checkDocument } from "../src/rules/checks.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 import type { Page } from "../src/profiles/loop.ts";
@@ -64,6 +64,22 @@ describe("normalize", () => {
     p.columns[4]!.label = "N.W."; p.columns[5]!.label = "G.W.";
     const r = normalize([p]).rows[0]!;
     expect([r.nw_kg.v, r.gw_kg.v]).toEqual(["705", "667.4"]);
+  });
+
+  it("writes a corrected value back into its printed text when that is a misread, and lists the rest for the rules", () => {
+    const p = page({ header: { doc_no: "PL-001", doc_date: "FEB. 2, 2026" }, rows: [["1-108", "108 CTNS 36CTN/3PLT", "PN:004617-41\nBOLT", "@5,800 PCS\n626,400 PCS", "@15.78\n1,704.24", "@16.18\n1,747.44"]] });
+    const fixes = {
+      "rows.1.0.qty": "620000", "rows.1.0.pkgs": "110", "rows.1.0.part_no": "004617-42", "header.doc_no": "PL-002",
+      "rows.1.0.pallets": "4", "rows.1.0.nw_kg": "800", "header.doc_date": "2026-02-03",
+    };
+    const l = learnable([p], fixes);
+    expect(l.learned.sort()).toEqual(["header.doc_no", "rows.1.0.part_no", "rows.1.0.pkgs", "rows.1.0.qty"]);
+    expect(l.answer[0]!.rows[0]!.cells.slice(1, 4)).toEqual(["110 CTNS 36CTN/3PLT", "PN:004617-42\nBOLT", "@5,800 PCS\n620,000 PCS"]);
+    expect(l.answer[0]!.header.doc_no!.v).toBe("PL-002");
+    // Pallets come from "3PLT" alongside the cartons, the weight was converted from LBS, the date is printed another way.
+    expect(l.review.map((r) => r.key).sort()).toEqual(["header.doc_date", "rows.1.0.nw_kg", "rows.1.0.pallets"]);
+    expect(l.review.find((r) => r.key === "rows.1.0.nw_kg")).toEqual({ key: "rows.1.0.nw_kg", printed: "@15.78\n1,704.24", read: "773.03", fixed: "800" });
+    expect(p.rows[0]!.cells[3]).toBe("@5,800 PCS\n626,400 PCS"); // the answer passed in is left as it was
   });
 
   it("takes the pallet total printed inside the package total", () => {
