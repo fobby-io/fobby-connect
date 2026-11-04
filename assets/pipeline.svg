@@ -1,0 +1,220 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1290 1075" width="1290" height="1075" role="img" aria-labelledby="t d">
+  <title id="t">Fobby Connect reading pipeline</title>
+  <desc id="d">A PDF is routed by page type, read with the sender's profile, checked in code and by a second system, approved automatically or reviewed by a person, normalized into one standard record and exported. Corrections that are misreads teach the sender's reading notes in the background, which go live only when replaying approved documents shows no regression.</desc>
+  <defs>
+    <style>
+      text { font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif; fill: #e6edf7; }
+      .h { font-size: 14px; font-weight: 600; }
+      .s { font-size: 12.5px; fill: #a9b8cf; }
+      .q { font-size: 13px; fill: #e6edf7; }
+      .lab { font-size: 12px; fill: #8fa1bd; }
+      .col { font-size: 13px; font-weight: 700; letter-spacing: 2px; fill: #7f93b3; }
+      .model { fill: #12234a; stroke: #5b8cff; }
+      .code { fill: #0f2a26; stroke: #34d399; }
+      .person { fill: #33240c; stroke: #f5a524; }
+      .out { fill: #161d2e; stroke: #8b9ab3; }
+      .ask { fill: #0f1729; stroke: #cbd5e1; }
+      .box { stroke-width: 1.6; }
+      .glow { fill: none; stroke-width: 3; opacity: 0.55; }
+      .ln { fill: none; stroke: #8ea0bf; stroke-width: 1.6; }
+      .fix { fill: none; stroke: #f5a524; stroke-width: 1.6; stroke-dasharray: 6 5; }
+      .loop { fill: none; stroke: #a78bfa; stroke-width: 1.8; stroke-dasharray: 7 5; }
+    </style>
+    <filter id="g" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="4"/></filter>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#8ea0bf"/></marker>
+    <marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#f5a524"/></marker>
+    <marker id="al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="#a78bfa"/></marker>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/></pattern>
+    <radialGradient id="bgl" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#14204a"/><stop offset="1" stop-color="#090e1c"/></radialGradient>
+  </defs>
+
+  <rect width="1290" height="1075" fill="url(#bgl)"/>
+  <rect width="1290" height="1075" fill="url(#grid)"/>
+
+  <!-- Column headings -->
+  <text class="col" x="30" y="40">1  READ</text>
+  <text class="col" x="450" y="40">2  CHECK</text>
+  <text class="col" x="900" y="40">3  RECORD AND SEND</text>
+
+  <!-- Learned notes reach the next document from the same sender -->
+  <path class="loop" d="M1230,828 H1268 V72 H18 V518 H28" marker-end="url(#al)"/>
+  <text class="lab" x="1150" y="66" text-anchor="middle" style="fill:#b9a6ff">learned notes reach the sender's next document</text>
+
+  <!-- 1 READ -->
+  <rect class="out glow" x="110" y="88" width="220" height="40" rx="20" filter="url(#g)"/>
+  <rect class="out box" x="110" y="88" width="220" height="40" rx="20"/>
+  <text class="h" x="220" y="113" text-anchor="middle">PDF in · upload or email</text>
+  <path class="ln" d="M220,128 V143" marker-end="url(#a)"/>
+
+  <path class="ask box" d="M220,145 L315,190 L220,235 L125,190 Z"/>
+  <text class="q" x="220" y="186.5" text-anchor="middle">Text layer</text>
+  <text class="q" x="220" y="203.5" text-anchor="middle">on the page?</text>
+
+  <path class="ln" d="M125,190 H117 V260" marker-end="url(#a)"/>
+  <text class="lab" x="110" y="232" text-anchor="end">yes · digital</text>
+  <path class="ln" d="M315,190 H322 V260" marker-end="url(#a)"/>
+  <text class="lab" x="330" y="232">no · scan</text>
+
+  <rect class="code glow" x="30" y="262" width="175" height="64" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="30" y="262" width="175" height="64" rx="12"/>
+  <text class="h" x="117.5" y="289.5" text-anchor="middle">Positioned text</text>
+  <text class="s" x="117.5" y="306.5" text-anchor="middle">characters from the file</text>
+
+  <rect class="code glow" x="235" y="262" width="175" height="64" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="235" y="262" width="175" height="64" rx="12"/>
+  <text class="h" x="322.5" y="289.5" text-anchor="middle">Page image</text>
+  <text class="s" x="322.5" y="306.5" text-anchor="middle">a scan, read by vision</text>
+
+  <path class="ln" d="M117,326 V342 H220 V356" marker-end="url(#a)"/>
+  <path class="ask box" d="M220,358 L325,410 L220,462 L115,410 Z"/>
+  <text class="q" x="220" y="399" text-anchor="middle">Sender and class</text>
+  <text class="q" x="220" y="415" text-anchor="middle">known from the</text>
+  <text class="q" x="220" y="431" text-anchor="middle">text layer?</text>
+
+  <path class="ln" d="M115,410 H105 V480" marker-end="url(#a)"/>
+  <text class="lab" x="97" y="450" text-anchor="end">yes</text>
+  <path class="ln" d="M220,462 V470 H317 V480" marker-end="url(#a)"/>
+  <text class="lab" x="262" y="465">no</text>
+  <path class="ln" d="M380,326 V480" marker-end="url(#a)"/>
+
+  <rect class="model glow" x="30" y="482" width="180" height="72" rx="12" filter="url(#g)"/>
+  <rect class="model box" x="30" y="482" width="180" height="72" rx="12"/>
+  <text class="h" x="120" y="506" text-anchor="middle">Read every page</text>
+  <text class="s" x="120" y="523" text-anchor="middle">at once with the</text>
+  <text class="s" x="120" y="540" text-anchor="middle">sender's profile</text>
+
+  <rect class="model glow" x="225" y="482" width="185" height="86" rx="12" filter="url(#g)"/>
+  <rect class="model box" x="225" y="482" width="185" height="86" rx="12"/>
+  <text class="h" x="317.5" y="504.5" text-anchor="middle">Read page 1 first</text>
+  <text class="s" x="317.5" y="521.5" text-anchor="middle">issuer and type pick</text>
+  <text class="s" x="317.5" y="538.5" text-anchor="middle">the profile, then the</text>
+  <text class="s" x="317.5" y="555.5" text-anchor="middle">other pages in parallel</text>
+
+  <path class="ln" d="M120,554 V594 H420 V131 H448" marker-end="url(#a)"/>
+  <path class="ln" d="M317,568 V594"/>
+
+  <!-- 2 CHECK -->
+  <rect class="code glow" x="450" y="88" width="380" height="86" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="450" y="88" width="380" height="86" rx="12"/>
+  <text class="h" x="640" y="119" text-anchor="middle">Checks in code, no model</text>
+  <text class="s" x="640" y="136" text-anchor="middle">row sums vs totals · pallets · POs in the marks</text>
+  <text class="s" x="640" y="153" text-anchor="middle">headers across pages · container check digits</text>
+
+  <path class="ln" d="M542,174 V210" marker-end="url(#a)"/>
+  <text class="lab" x="549" y="196">a page fails</text>
+  <path class="ln" d="M737,174 V210" marker-end="url(#a)"/>
+  <text class="lab" x="744" y="196">all pass</text>
+
+  <rect class="model glow" x="450" y="212" width="185" height="82" rx="12" filter="url(#g)"/>
+  <rect class="model box" x="450" y="212" width="185" height="82" rx="12"/>
+  <text class="h" x="542.5" y="241" text-anchor="middle">Re-read only that page</text>
+  <text class="s" x="542.5" y="258" text-anchor="middle">findings given as a hint,</text>
+  <text class="s" x="542.5" y="275" text-anchor="middle">kept only if it fails less</text>
+  <path class="ln" d="M635,253 H643" marker-end="url(#a)"/>
+
+  <rect class="model glow" x="645" y="212" width="185" height="82" rx="12" filter="url(#g)"/>
+  <rect class="model box" x="645" y="212" width="185" height="82" rx="12"/>
+  <text class="h" x="737.5" y="241" text-anchor="middle">Second system (Jev)</text>
+  <text class="s" x="737.5" y="258" text-anchor="middle">checks every value against</text>
+  <text class="s" x="737.5" y="275" text-anchor="middle">the page text or image</text>
+
+  <path class="ln" d="M737,294 V308 H640 V321" marker-end="url(#a)"/>
+  <path class="ask box" d="M640,323 L815,395 L640,467 L465,395 Z"/>
+  <text class="q" x="640" y="383" text-anchor="middle">Known sender, not on hold,</text>
+  <text class="q" x="640" y="400" text-anchor="middle">every value verified, rules pass,</text>
+  <text class="q" x="640" y="417" text-anchor="middle">same columns as last time?</text>
+
+  <path class="ln" d="M815,395 H898" marker-end="url(#a)"/>
+  <text class="lab" x="848" y="388">yes</text>
+  <path class="ln" d="M640,467 V498" marker-end="url(#a)"/>
+  <text class="lab" x="648" y="486">no</text>
+
+  <rect class="person glow" x="530" y="500" width="220" height="76" rx="12" filter="url(#g)"/>
+  <rect class="person box" x="530" y="500" width="220" height="76" rx="12"/>
+  <text class="h" x="640" y="526" text-anchor="middle">Review by a person</text>
+  <text class="s" x="640" y="543" text-anchor="middle">page beside the values;</text>
+  <text class="s" x="640" y="560" text-anchor="middle">click a value to correct it</text>
+
+  <!-- 3 RECORD AND SEND -->
+  <rect class="out glow" x="900" y="370" width="320" height="50" rx="25" filter="url(#g)"/>
+  <rect class="out box" x="900" y="370" width="320" height="50" rx="25"/>
+  <text class="h" x="1060" y="400" text-anchor="middle">Approved without a person</text>
+  <path class="ln" d="M1060,420 V468" marker-end="url(#a)"/>
+  <path class="ln" d="M750,520 H898" marker-end="url(#a)"/>
+  <text class="lab" x="824" y="512" text-anchor="middle">approved</text>
+
+  <rect class="code glow" x="900" y="470" width="320" height="66" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="900" y="470" width="320" height="66" rx="12"/>
+  <text class="h" x="1060" y="498.5" text-anchor="middle">Normalize in code</text>
+  <text class="s" x="1060" y="515.5" text-anchor="middle">kg · UN/LOCODE ports · ISO dates · ranges</text>
+  <path class="ln" d="M1060,536 V564" marker-end="url(#a)"/>
+
+  <rect class="code glow" x="900" y="566" width="320" height="64" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="900" y="566" width="320" height="64" rx="12"/>
+  <text class="h" x="1060" y="593.5" text-anchor="middle">Standard record in Postgres</text>
+  <text class="s" x="1060" y="610.5" text-anchor="middle">doc_header · doc_rows, raw text kept</text>
+  <path class="ln" d="M1060,630 V658" marker-end="url(#a)"/>
+
+  <rect class="out glow" x="900" y="660" width="320" height="56" rx="12" filter="url(#g)"/>
+  <rect class="out box" x="900" y="660" width="320" height="56" rx="12"/>
+  <text class="h" x="1060" y="683.5" text-anchor="middle">Export</text>
+  <text class="s" x="1060" y="700.5" text-anchor="middle">CSV · JSON · signed webhook · email</text>
+
+  <!-- 4 LEARN -->
+  <rect x="20" y="760" width="1230" height="250" rx="18" fill="#a78bfa" fill-opacity="0.05" stroke="#a78bfa" stroke-opacity="0.35" stroke-dasharray="4 6"/>
+  <text class="col" x="40" y="790">4  LEARN · IN THE BACKGROUND, AFTER THE APPROVAL</text>
+
+  <path class="fix" d="M640,576 V735 H250 V820" marker-end="url(#af)"/>
+  <text class="lab" x="648" y="700" style="fill:#f5c26b">corrections</text>
+
+  <path class="ask box" d="M250,822 L390,870 L250,918 L110,870 Z"/>
+  <text class="q" x="250" y="867" text-anchor="middle">A misread, or a</text>
+  <text class="q" x="250" y="883" text-anchor="middle">conversion rule?</text>
+
+  <path class="ln" d="M250,918 V930 H160 V942" marker-end="url(#a)"/>
+  <text class="lab" x="258" y="936">rule</text>
+  <rect class="code glow" x="55" y="944" width="210" height="50" rx="12" filter="url(#g)"/>
+  <rect class="code box" x="55" y="944" width="210" height="50" rx="12"/>
+  <text class="h" x="160" y="964.5" text-anchor="middle">rule_reviews</text>
+  <text class="s" x="160" y="981.5" text-anchor="middle">for the rules, not the reader</text>
+
+  <path class="ln" d="M390,870 H448" marker-end="url(#a)"/>
+  <text class="lab" x="419" y="862" text-anchor="middle">misread</text>
+  <rect class="model glow" x="450" y="830" width="250" height="80" rx="12" filter="url(#g)"/>
+  <rect class="model box" x="450" y="830" width="250" height="80" rx="12"/>
+  <text class="h" x="575" y="858" text-anchor="middle">Muse Wonder rewrites</text>
+  <text class="s" x="575" y="875" text-anchor="middle">the sender's reading notes,</text>
+  <text class="s" x="575" y="892" text-anchor="middle">with no document values</text>
+
+  <path class="ln" d="M700,870 H738" marker-end="url(#a)"/>
+  <path class="model box" d="M870,820 L1000,870 L870,920 L740,870 Z"/>
+  <text class="q" x="870" y="859" text-anchor="middle">Replay the sender's</text>
+  <text class="q" x="870" y="875" text-anchor="middle">approved documents:</text>
+  <text class="q" x="870" y="891" text-anchor="middle">no regression?</text>
+
+  <path class="ln" d="M1000,870 H1018 V828 H1038" marker-end="url(#a)"/>
+  <text class="lab" x="1012" y="820" text-anchor="middle">yes</text>
+  <path class="ln" d="M1018,870 V930 H1038" marker-end="url(#a)"/>
+  <text class="lab" x="1008" y="914" text-anchor="end">no</text>
+
+  <rect class="out glow" x="1040" y="800" width="190" height="56" rx="12" filter="url(#g)"/>
+  <rect class="out box" x="1040" y="800" width="190" height="56" rx="12"/>
+  <text class="h" x="1135" y="823.5" text-anchor="middle">New notes go live</text>
+  <text class="s" x="1135" y="840.5" text-anchor="middle">for this sender</text>
+
+  <rect class="out glow" x="1040" y="902" width="190" height="56" rx="12" filter="url(#g)"/>
+  <rect class="out box" x="1040" y="902" width="190" height="56" rx="12"/>
+  <text class="h" x="1135" y="925.5" text-anchor="middle">Field marked</text>
+  <text class="s" x="1135" y="942.5" text-anchor="middle">always review</text>
+
+  <!-- Legend -->
+  <rect class="model box" x="30" y="1031" width="18" height="14" rx="4"/>
+  <text class="lab" x="56" y="1043">calls a model</text>
+  <rect class="code box" x="170" y="1031" width="18" height="14" rx="4"/>
+  <text class="lab" x="196" y="1043">code only</text>
+  <rect class="person box" x="290" y="1031" width="18" height="14" rx="4"/>
+  <text class="lab" x="316" y="1043">a person</text>
+  <path class="ask box" d="M409,1031 L418,1038 L409,1045 L400,1038 Z"/>
+  <text class="lab" x="426" y="1043">decision</text>
+  <text class="lab" x="1250" y="1043" text-anchor="end">Fobby Connect · reading pipeline</text>
+</svg>

@@ -1,18 +1,27 @@
 # Fobby Connect
 
-**Connects every sender's freight document layout to one schema, and learns each sender so the next document needs less review.**
+**Reads every sender's freight documents into one schema, and learns each sender so the next document needs less review.**
 
-Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand: 30–60 minutes per document, and every sender uses its own layout. Fobby Connect reads them with Meta's Muse Spark into one fixed schema, checks the numbers with code and every value with a second system, and learns each sender's layout from the clerk's corrections with Muse Wonder, so the next document from that sender needs less review, or none: a known sender's document that passes every check is approved and sent on without a person.
+Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand. One document takes 30–60 minutes, and every sender prints its own layout.
 
-Live demo: https://connect.fobby.io. The screen is in English; it reads Chinese and English documents. No PDF of your own? Upload these synthetic ones (invented companies), in this order:
+Fobby Connect reads each page with Meta's Muse Spark into one fixed schema. Code checks the numbers and a second system checks every value. When a clerk corrects a value, Muse Wonder rewrites that sender's reading notes, so the sender's next document needs less review. A document from a known sender that passes every check is approved and sent on with no person involved.
 
-1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender: it goes to review. Check it against the PDF and approve.
-2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout: every value is checked, and it is approved without review.
+## Try it
+
+Open https://connect.fobby.io and upload these synthetic samples (invented companies) in this order. Each one takes about a minute to read; the list updates by itself.
+
+1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender. It goes to review: check it against the PDF and approve.
+2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout. Every value is checked, and it is approved without review.
 3. [Shipping order](eval/samples/so-1.pdf), in Chinese, from another sender.
 
 ## How the reading pipeline is optimized
 
-OCR alone gives text, not a shipment. The pipeline below turns a PDF into checked, typed values, and it puts the model only where code cannot do the job. Each stage either saves a model call, saves waiting, or catches an error before a person has to.
+Plain OCR returns text; a forwarder needs checked values in the right fields. The pipeline calls a model only where code can't do the job.
+
+![Reading pipeline: route each page, read with the sender's profile, check in code and with a second system, approve or review, normalize into one record, export, and learn from misreads in the background](assets/pipeline.svg)
+
+<details>
+<summary>The same flow as a Mermaid diagram</summary>
 
 ```mermaid
 flowchart TD
@@ -57,7 +66,7 @@ flowchart TD
     class B,E,L,R,U ask
 ```
 
-Blue steps call a model, green steps are code only, and the orange step needs a person.
+</details>
 
 | What we changed | Why it matters |
 |---|---|
@@ -68,7 +77,7 @@ Blue steps call a model, green steps are code only, and the orange step needs a 
 | **Checks in code, targeted re-reads.** Sums, pallets, POs and cross-page headers are checked without a model. Only a failing page is read again, with the findings as a hint, and the re-read is kept only if it fails fewer checks. | A wrong number that breaks a sum or a check digit is caught without a model call. A re-read costs one page, not a whole document. |
 | **A second system on every value.** For a sender seen before, a separate decision model checks each value against the page. | A document is approved without a person only when two systems agree and every rule passes. |
 | **Normalize once, store one record.** Kilograms, UN/LOCODE ports, ISO dates and package ranges are computed in code and stored one column per field. The raw text is kept beside each value. | Exports, webhooks and email all send the same checked values, whatever layout the sender used. |
-| **Learn from the right corrections.** A correction that matches the printed text is a misread, and the sender's notes are rewritten from it. A correction that comes from a conversion goes to `rule_reviews` instead. New notes go live only if replaying the sender's approved documents shows no regression. | The reader learns only from real misreads, and a sender's reading never gets worse. |
+| **Learn from the right corrections.** A correction that matches the printed text is a misread, and the sender's notes are rewritten from it. A correction that comes from a conversion goes to `rule_reviews` instead. New notes go live only if replaying the sender's approved documents shows no regression. | The reader learns only from real misreads, and a change that reads the sender's approved documents worse is not activated. |
 | **Nobody waits.** An upload is listed as "reading" at once and the list updates when it is done. Learning runs after the approval, in the background. | The clerk keeps working while pages are read and while the reader learns. |
 
 ## How it works
@@ -97,7 +106,12 @@ npx -y pnpm@12.16.1 build:web
 npx tsx src/server/local.ts      # http://localhost:8787
 ```
 
-Data is kept in Postgres: documents, each document's standard record (`doc_header` and `doc_rows`: one column per field, in kg and UN/LOCODE whatever the sender printed, written after the read and replaced at approval with the values a person confirmed; exports read it), corrections that point at a conversion rule rather than a misread (`rule_reviews`), learning still to run after an approval (`learn_jobs`: it runs in the background and `retry()`, every minute, takes over one that was cut off), reading versions, approved examples, senders on hold, the export flow, deliveries waiting for a retry, the daily limit and every model call. Files under `DATA_DIR` (R2 on a host) hold only documents: each PDF, its read result and the request sent for each read. Without `DATABASE_URL` in `.dev.vars` the server runs an embedded Postgres (PGlite) in `data/pg`; with it (a direct connection URL) it uses that database. Either way the schema is applied on start; for another host, `npx tsx scripts/migrate.ts` applies it. Data kept as JSON files by an earlier version moves in with `npx tsx scripts/migrate-storage.ts` (add `--apply` to write; safe to run again).
+Storage:
+
+- **Postgres holds the data.** It stores documents, each document's standard record (`doc_header` and `doc_rows`, one column per field in kg and UN/LOCODE, replaced at approval with the values a person confirmed; exports read it), corrections that point at a conversion rule (`rule_reviews`), learning still to run (`learn_jobs`, taken over by `retry()` every minute if it was cut off), reading versions, approved examples, senders on hold, the export flow, deliveries waiting for a retry, the daily limits and every model call.
+- **Files hold the documents.** Under `DATA_DIR` (R2 on a host) you find each PDF, its read result and the request sent for each read.
+- **Without `DATABASE_URL`** in `.dev.vars` the server runs an embedded Postgres (PGlite) in `data/pg`. With it, the server uses that database. Either way it applies the schema on start; for another host, run `npx tsx scripts/migrate.ts`.
+- **Data from an earlier version** kept as JSON files moves in with `npx tsx scripts/migrate-storage.ts` (add `--apply` to write; safe to run again).
 
 Tests: `npx tsc --noEmit && npx vitest run`. Sample PDFs: `npx tsx scripts/build-samples.ts`.
 
@@ -112,7 +126,7 @@ Customer documents only go to tiers whose data is not used to train Meta's model
 
 ## Built during the hackathon
 
-Everything in this repository was written between 2026-10-27 and 2026-11-04 (see the git history). Nothing from fobby.io, the author's freight-quote product, is used. Meta Global AI Developer Hackathon, Startups track, "Build for Your World".
+Everything in this repository was written during the hackathon, between 2026-10-27 and 2026-11-04. Nothing from fobby.io, the author's freight-quote product, is used. Meta Global AI Developer Hackathon, Startups track, "Build for Your World".
 
 | Part | Code |
 |---|---|
