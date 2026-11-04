@@ -1,5 +1,5 @@
 // The approved record as it is sent: what export.json holds, read-only, so a mistake can be spotted before reopening.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { NormDoc } from "./api.ts";
 import { api, errorMessage } from "./api.ts";
 import { Button } from "./components/ui/button.tsx";
@@ -9,6 +9,7 @@ import { fmt, problems, type Finding } from "./diff.ts";
 import { t, useLang } from "./i18n.ts";
 import { labels } from "./labels.ts";
 import { cn } from "./lib/utils.ts";
+import { PageViewer } from "./Review.tsx";
 
 type V = { v: string | null; raw: string | null };
 type Row = Omit<NormDoc["rows"][number], "box">;
@@ -44,7 +45,50 @@ export function useApproved(id: string, approved: boolean) {
   return { rec, error };
 }
 
-export function Approved({ rec, error }: { rec: ApprovedRecord | null; error: unknown }) {
+/** The source PDF beside the approved data: a sticky column on a wide screen, the whole screen on a narrow one. */
+export function PdfPanel({ docId, pages, onClose }: { docId: string; pages: number; onClose: () => void }) {
+  useLang();
+  const [current, setCurrent] = useState(0);
+  const close = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // Focus goes into the panel and back to whatever opened it.
+    const opener = document.activeElement as HTMLElement | null;
+    close.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); opener?.focus(); };
+  }, [onClose]);
+  const pageNos = Array.from({ length: pages }, (_, i) => i + 1);
+  return (
+    <aside aria-labelledby="pdf-title"
+      className="fixed inset-0 z-30 flex flex-col bg-background min-[1100px]:sticky min-[1100px]:inset-auto min-[1100px]:top-[4.5rem] min-[1100px]:z-auto min-[1100px]:h-[calc(100vh-6rem)] min-[1100px]:rounded-2xl min-[1100px]:border min-[1100px]:border-white/80 min-[1100px]:bg-card min-[1100px]:shadow-[0_1px_2px_rgb(16_40_90/0.04),0_10px_30px_rgb(16_40_90/0.06)] min-[1100px]:backdrop-blur-xl">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
+        <h2 id="pdf-title" className="mr-auto text-base font-semibold">{t("原始 PDF", "Source PDF")}</h2>
+        {pages > 1 && (
+          <div role="group" aria-label={t("頁", "Pages")} className="flex gap-1">
+            {pageNos.map((n, i) => (
+              <button key={n} type="button" aria-pressed={i === current} onClick={() => setCurrent(i)}
+                className={cn("cursor-pointer rounded-full border-0 px-3 py-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                  i === current ? "bg-accent font-medium text-foreground" : "bg-transparent text-muted-foreground hover:text-foreground")}>
+                {t(`第 ${n} 頁`, `Page ${n}`)}
+              </button>
+            ))}
+          </div>
+        )}
+        <a href={`/api/documents/${docId}/file`} target="_blank" rel="noreferrer" className="text-sm text-primary">{t("新分頁開啟 ↗", "New tab ↗")}</a>
+        <button ref={close} type="button" onClick={onClose} aria-label={t("關閉 PDF", "Close the PDF")} title={t("關閉（Esc）", "Close (Esc)")}
+          className="grid size-8 cursor-pointer place-items-center rounded-full border-0 bg-transparent text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <PageViewer docId={docId} pageNos={pageNos} current={current} box={undefined} />
+      </div>
+    </aside>
+  );
+}
+
+export function Approved({ rec, error, onViewPdf }: { rec: ApprovedRecord | null; error: unknown; onViewPdf: () => void }) {
   useLang();
   const L = labels();
   const [all, setAll] = useState(false);
@@ -69,7 +113,9 @@ export function Approved({ rec, error }: { rec: ApprovedRecord | null; error: un
     <Card className="gap-0 p-6">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold">{t("確認後的資料", "Approved data")}</h2>
-        <a href={rec.source.file} target="_blank" rel="noreferrer" className="text-sm text-primary">{t(`打開原始 PDF（${rec.source.pages} 頁）↗`, `Open the PDF (${rec.source.pages} page${rec.source.pages === 1 ? "" : "s"}) ↗`)}</a>
+        <button type="button" onClick={onViewPdf} className="cursor-pointer border-0 bg-transparent p-0 text-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          {t(`對照原始 PDF（${rec.source.pages} 頁）`, `View the PDF (${rec.source.pages} page${rec.source.pages === 1 ? "" : "s"})`)}
+        </button>
       </div>
       <p className="mb-5 text-sm text-muted-foreground">{t("送出去的就是這些。對照原始 PDF，有錯就在下面重新審核。", "This is exactly what is sent. Compare it with the PDF; if something is wrong, reopen it below.")}</p>
 

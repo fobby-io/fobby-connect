@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type Sample, type SenderInfo } from "./api.ts";
-import { Approved, useApproved } from "./Approved.tsx";
+import { Approved, PdfPanel, useApproved } from "./Approved.tsx";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -452,6 +452,8 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   const count = info?.approved.find((x) => x.cls === cls)?.count;
   const active = info?.versions.find((v) => v.status === "active" && v.key.endsWith(`/${cls}`));
   const approvedData = useApproved(doc.id, !!a.approved_at);
+  const [pdf, setPdf] = useState(false);
+  const closePdf = useCallback(() => setPdf(false), []);
   // Counts come from what was approved; documents approved before export existed fall back to what was read.
   const n = approvedData.rec ?? doc.normalized;
   const sum = (k: string) => n.rows.reduce((x, r) => x + Number((r as unknown as Record<string, { v: string | null }>)[k]?.v ?? 0), 0);
@@ -505,7 +507,9 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   if (v) stats.push([v.checked, t("個值核對過", "values checked")]);
 
   return (
-    <div className="mx-auto grid max-w-[64rem] grid-cols-[minmax(0,1fr)] gap-5">
+    // With the PDF open on a wide screen the page splits in two so both can be scrolled side by side.
+    <div className={cn("mx-auto grid grid-cols-[minmax(0,1fr)] items-start gap-5", pdf ? "max-w-[110rem] min-[1100px]:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" : "max-w-[64rem]")}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
       <Card className="gap-0 p-6">
         <div className="flex flex-wrap items-start gap-4">
           <DocIcon so={cls === "SO"} />
@@ -535,7 +539,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
         {next && <p className="mt-3 text-sm text-muted-foreground">{next}</p>}
       </Card>
 
-      {a.approved_at && <Approved {...approvedData} />}
+      {a.approved_at && <Approved {...approvedData} onViewPdf={() => setPdf(true)} />}
 
       <Export doc={doc} />
 
@@ -546,6 +550,8 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
         <a href="#" className="text-primary">{t("回到文件清單", "Back to documents")}</a>
         {typeof reopen === "object" && <span className="w-full text-destructive" role="alert">{errorMessage(reopen.error)}</span>}
       </div>
+      </div>
+      {pdf && approvedData.rec && <PdfPanel docId={doc.id} pages={approvedData.rec.source.pages} onClose={closePdf} />}
     </div>
   );
 }

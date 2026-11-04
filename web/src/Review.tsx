@@ -532,7 +532,7 @@ function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
 }
 
 // pdf.js draws every page once into its own canvas; the open row's box sits on top in 0–1000 page coordinates, so render scale does not matter.
-function PageViewer({ docId, pageNos, current, box }: { docId: string; pageNos: number[]; current: number; box: number[] | undefined }) {
+export function PageViewer({ docId, pageNos, current, box }: { docId: string; pageNos: number[]; current: number; box: number[] | undefined }) {
   useLang();
   const slots = useRef<(HTMLDivElement | null)[]>([]);
   const [error, setError] = useState<unknown>(null);
