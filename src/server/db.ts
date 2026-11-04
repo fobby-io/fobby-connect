@@ -49,6 +49,8 @@ export interface Db {
   /** Upsert by id; never writes approved_at, so a save cannot undo an approval. */
   putDoc(space: string, d: Omit<DocRow, "approved_at">): Promise<void>;
   listDocs(space: string): Promise<DocRow[]>;
+  /** Whether the space has this document: a file alone does not make a document visible. */
+  hasDoc(space: string, id: string): Promise<boolean>;
   /** Claims the document: true only for the one request that set approved_at. */
   markApproved(space: string, id: string, approved_at: string): Promise<boolean>;
   clearApproved(space: string, id: string): Promise<void>;
@@ -74,6 +76,9 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
     },
     async listDocs(space) {
       return await db.select(docCols).from(documents).where(eq(documents.space_id, space)).orderBy(desc(documents.created_at)) as DocRow[];
+    },
+    async hasDoc(space, id) {
+      return (await db.select({ id: documents.id }).from(documents).where(one(space, id)).limit(1)).length > 0;
     },
     async markApproved(space, id, approved_at) {
       const r = await db.update(documents).set({ approved_at }).where(and(one(space, id), isNull(documents.approved_at))).returning({ id: documents.id });

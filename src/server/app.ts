@@ -78,7 +78,10 @@ export function createApp(deps: Deps) {
   const spent = () => deps.spent?.() ?? null;
 
   const getJson = async <T>(key: string): Promise<T | null> => { const b = await files.get(key); return b && JSON.parse(dec.decode(b)); };
+  // The database decides which documents a space has; the file only holds the read result.
+  const owned = async (id: string) => { if (!(await db.hasDoc(await space(), id))) throw fail(404, "not_found", `document ${id}`); };
   const load = async (id: string): Promise<Saved> => {
+    await owned(id);
     const d = await getJson<Saved>(`runs/${id}.json`);
     if (!d) throw fail(404, "not_found", `document ${id}`);
     // Runs saved before a header key was added lack it; the schema needs every key present.
@@ -352,6 +355,7 @@ export function createApp(deps: Deps) {
       }))));
     }
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/file$/))) {
+      await owned(m[1]!);
       const pdf = await files.get(`runs/${m[1]}.pdf`);
       if (!pdf) throw fail(404, "not_found", `document ${m[1]}`);
       return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });

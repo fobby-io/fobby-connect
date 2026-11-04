@@ -102,6 +102,18 @@ describe("createApp", () => {
     expect("approved_at" in (await (await call(app, `/api/documents/${doc.id}`)).json()).approved).toBe(false);
   });
 
+  it("shows a document only to the space that has it in the database, whatever files exist", async () => {
+    const { app, store } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    // The same files under another space: the run JSON and PDF are there, the database row is not.
+    const other = new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() }));
+    const files = { get: async (k: string) => (k === "space.json" ? other : store.get(k) ?? null), put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
+    const stranger = createApp({ files, db: lazyDb(shared), client: reads() });
+    expect(await (await call(stranger, "/api/documents")).json()).toEqual([]);
+    for (const p of ["", "/file", "/export.json"]) expect((await call(stranger, `/api/documents/${doc.id}${p}`)).status).toBe(404);
+    expect((await call(app, `/api/documents/${doc.id}`)).status).toBe(200);
+  });
+
   it("answers 402 credit_exhausted when Meta says the credit is gone", async () => {
     const { app } = setup(async () => { throw new MetaError(402, false, "insufficient credit"); });
     const r = await call(app, "/api/documents", { method: "POST", body: await pdf() });
