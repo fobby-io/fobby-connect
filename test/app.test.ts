@@ -103,6 +103,18 @@ describe("createApp", () => {
     expect("approved_at" in (await (await call(app, `/api/documents/${doc.id}`)).json()).approved).toBe(false);
   });
 
+  it("deletes a document: gone from the list, its files and its sender's approved examples", async () => {
+    const { app, store } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
+    expect((await call(app, `/api/documents/${doc.id}`, { method: "DELETE" })).status).toBe(200);
+    expect(await (await call(app, "/api/documents")).json()).toEqual([]);
+    expect((await call(app, `/api/documents/${doc.id}`)).status).toBe(404);
+    expect([...store.keys()].filter((k) => k.startsWith(`runs/${doc.id}`))).toEqual([]);
+    expect(((await (await call(app, "/api/senders")).json()) as { approved: unknown[] }[]).flatMap((s) => s.approved)).toEqual([]);
+    expect((await call(app, `/api/documents/${doc.id}`, { method: "DELETE" })).status).toBe(404);
+  });
+
   it("shows a document only to the space that has it in the database, whatever files exist", async () => {
     const { app, store } = setup(reads());
     const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();

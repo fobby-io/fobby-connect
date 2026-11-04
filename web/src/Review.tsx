@@ -106,8 +106,18 @@ export function Review({ doc, onApproved }: {
   const doubtVals = (v?.pages ?? []).flatMap((pg, pi) => Object.entries(pg.values).filter(([, p]) => p < PASS).map(([key, p]) => ({ pi, key, p })));
   const doubtAt = new Map(doubtCells.map((d) => [`${d.pi}:${d.ri}:${d.col}`, d.p]));
   const doubtKey = new Map(doubtVals.map((d) => [d.key, d.p]));
+  const doubts = doubtCells.length + doubtVals.length;
   const doubtWord = (p: number) => (p < WRONG ? t("可能讀錯", "likely wrong") : t("不確定", "unsure"));
   const issuer = norm.header.shipper?.v ?? ((run.issuer ?? "").split("\n")[0] || t("（沒讀到寄件公司）", "(sender not read)"));
+  const span = (a: V, b: V) => (a.v ? (a.v === b.v ? a.v : `${a.v}–${b.v}`) : "");
+  const cellText = (r: NormDoc["rows"][number], k: string) => {
+    if (k === "pkg_range") return span(r.pkg_from, r.pkg_to);
+    if (k === "pallet_range") return span(r.pallet_from, r.pallet_to);
+    const v = fmt((r as unknown as Record<string, V>)[k]?.v);
+    return k === "qty" && r.qty_unit.v ? `${v} ${r.qty_unit.v}` : v;
+  };
+  // Columns empty on every row are left out, so the table fits beside the page; one with a warning or a doubt always shows.
+  const cols = L.COLS.filter(([k]) => warnCols.has(k) || doubtCells.some((d) => d.col === k) || norm.rows.some((r) => cellText(r, k)));
   const sum = (k: string) => norm.rows.reduce((a, r) => a + Number((r as unknown as Record<string, V>)[k]!.v ?? 0), 0);
 
   const pageTabs = run.pages.length > 1 && (
@@ -146,22 +156,28 @@ export function Review({ doc, onApproved }: {
             ))}
           </div>
         </div>
-        {!!doc.auto?.reasons.length && (
-          <div className="mt-3.5 rounded-[10px] border px-4 py-3">
-            <h2 className="mb-1 text-[15px] font-bold">{t("需要審核的原因", "Needs review because")}</h2>
-            <ul className="list-disc pl-5 text-sm">{doc.auto.reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}</ul>
-          </div>
-        )}
-        <div className={cn("mt-3.5 rounded-[10px] px-4 py-3", doubtCells.length + doubtVals.length ? "border border-warn-line bg-warn-bg" : v && !v.unchecked_pages ? "bg-ok-bg text-ok" : "border")}>
-          <h2 className="mb-1 text-[15px] font-bold">{t("核對", "Check")}</h2>
-          {!v && <p className="text-sm">{doc.auto?.reasons.includes("unknown_sender")
-            ? t("新廠商不核對，請看過每個值。", "Not checked for a new sender. Look over every value.")
-            : t("沒有核對，請看過每個值。", "Not checked. Look over every value.")}</p>}
-          {v && <p className="text-sm">{t(`核對了 ${v.checked} 個值：`, `${v.checked} values checked: `)}
-            {doubtCells.length + doubtVals.length ? t(`${doubtCells.length + doubtVals.length} 個待確認（橘色）。`, `${doubtCells.length + doubtVals.length} flagged (orange).`) : t("全部通過。", "all passed.")}
-            {v.unchecked_pages ? t(`${v.unchecked_pages} 頁沒有核對到，請看過。`, ` ${v.unchecked_pages} page${v.unchecked_pages === 1 ? "" : "s"} not checked; look ${v.unchecked_pages === 1 ? "it" : "them"} over.`) : ""}</p>}
-          {doubtCells.length + doubtVals.length > 0 && (
-            <ol className="mt-1.5 list-decimal pl-5 text-sm">
+        {/* One line: why a person sees it, what the second check found, what the rules found. Lists only when something needs a look. */}
+        <ul className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t pt-3.5 text-sm" aria-label={t("狀態", "Status")}>
+          {!!doc.auto?.reasons.length && (
+            <Status tone="neutral">{t("待審：", "In review: ")}{doc.auto.reasons.map(reasonText).join(t("、", ", "))}</Status>
+          )}
+          <Status tone={doubts ? "warn" : v && !v.unchecked_pages ? "ok" : "neutral"}>
+            {!v ? (doc.auto?.reasons.includes("unknown_sender") ? t("新廠商不核對，請看過每個值", "Not checked (new sender): look over every value") : t("沒有核對，請看過每個值", "Not checked: look over every value"))
+              : <>{t(`核對 ${v.checked} 個值`, `${v.checked} values checked`)}{doubts ? t(`，${doubts} 個待確認`, `, ${doubts} flagged`) : t("，全部通過", ", all passed")}
+                {v.unchecked_pages ? t(`，${v.unchecked_pages} 頁沒核對到`, `, ${v.unchecked_pages} page${v.unchecked_pages === 1 ? "" : "s"} not checked`) : ""}</>}
+          </Status>
+          <Status tone={probs.length ? "warn" : "ok"}>
+            {probs.length ? t(`${probs.length} 個檢查沒過`, `${probs.length} check${probs.length === 1 ? "" : "s"} failed`) : t("加總、板數、PO、各頁抬頭都通過", "Sums, pallets, PO and page headers pass")}
+          </Status>
+        </ul>
+        {(doubts > 0 || probs.length > 0) && (
+          <div className="mt-3 rounded-[10px] border border-warn-line bg-warn-bg px-4 py-3 text-sm">
+            <ol className="list-decimal space-y-1 pl-5">
+              {probs.map((p) => (
+                <li key={p.text}>{p.text}{t("。", ".")}
+                  <Button variant="link" className={cn(LINK, "ml-1.5")} onClick={() => { setCurrent(p.pages[0]! - 1); setOpenRow(null); }}>{t(`看第 ${p.pages.join("、")} 頁`, `See page ${p.pages.join(", ")}`)}</Button>
+                </li>
+              ))}
               {doubtVals.map((d) => (
                 <li key={`v${d.pi}${d.key}`}>{L.HEAD[d.key] ?? L.TOTAL[d.key] ?? d.key}{t(`：「${orig[d.pi]!.header[d.key]?.v ?? orig[d.pi]!.totals[d.key]?.v}」，`, `: "${orig[d.pi]!.header[d.key]?.v ?? orig[d.pi]!.totals[d.key]?.v}", `)}{doubtWord(d.p)}{t("。", ".")}</li>
               ))}
@@ -172,22 +188,8 @@ export function Review({ doc, onApproved }: {
               ))}
               {doubtCells.length > 12 && <li>{t(`還有 ${doubtCells.length - 12} 個（明細裡的橘色）`, `${doubtCells.length - 12} more (orange in the line items)`)}</li>}
             </ol>
-          )}
-        </div>
-        {probs.length ? (
-          <div className="mt-3.5 rounded-[10px] border border-warn-line bg-warn-bg px-4 py-3">
-            <h2 className="mb-1.5 text-[15px] font-bold text-warn">{t(`${probs.length} 個檢查沒過`, `${probs.length} check${probs.length === 1 ? "" : "s"} failed`)}</h2>
-            <ol className="list-decimal pl-5">
-              {probs.map((p) => (
-                <li key={p.text} className="my-1">{p.text}{t("。", ".")}
-                  <Button variant="link" className={cn(LINK, "ml-1.5")} onClick={() => { setCurrent(p.pages[0]! - 1); setOpenRow(null); }}>{t(`看第 ${p.pages.join("、")} 頁`, `See page ${p.pages.join(", ")}`)}</Button>
-                </li>
-              ))}
-            </ol>
-            <p className="mt-2 text-[13px] text-muted-foreground">{t("原本就對的話，直接確認。", "If it was right all along, just approve.")}</p>
+            {probs.length > 0 && <p className="mt-2 text-[13px] text-muted-foreground">{t("原本就對的話，直接確認。", "If it was right all along, just approve.")}</p>}
           </div>
-        ) : (
-          <div className="mt-3.5 rounded-[10px] bg-ok-bg px-4 py-3 text-ok">{t("檢查全部通過（加總、板數、PO、各頁抬頭）。", "All checks passed (sums, pallets, PO, page headers).")}</div>
         )}
       </section>
 
@@ -207,10 +209,16 @@ export function Review({ doc, onApproved }: {
         </Card>
       )}
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 min-[1101px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
-        <Card className={cn(SECTION, "min-[1101px]:sticky min-[1101px]:top-3")}>
-          {pageTabs}
-          <PageViewer docId={doc.id} pageNos={run.pages.map((p) => p.page_no)} current={current} box={openPage} />        </Card>
+      {/* Half and half: the page is what every value is checked against, so it is shown at a readable size and stays in
+          view (scrolling inside itself) while the values scroll past. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card className={cn(SECTION, "min-[1101px]:sticky min-[1101px]:top-[72px] min-[1101px]:max-h-[calc(100vh-88px)] min-[1101px]:overflow-auto")}>
+          <div className="flex flex-wrap items-start gap-x-3">
+            {pageTabs}
+            <a href={`/api/documents/${doc.id}/file`} target="_blank" rel="noreferrer" className="ml-auto pt-1 text-[13px] text-primary underline underline-offset-2">{t("在新分頁開 PDF", "Open PDF in a new tab")}</a>
+          </div>
+          <PageViewer docId={doc.id} pageNos={run.pages.map((p) => p.page_no)} current={current} box={openPage} />
+        </Card>
 
         <div>
           <Card className={SECTION}>
@@ -223,16 +231,12 @@ export function Review({ doc, onApproved }: {
                 const now = answer[pi]!.header[k]?.v ?? null;
                 const key = `header.${k}`;
                 return (
-                  <div key={k} className={cn(k === "shipping_marks" && "col-span-full")}>
-                    <div className="text-[13px] text-muted-foreground">{name}</div>
-                    <div className={cn("font-semibold break-words", !nv?.v && "font-normal text-muted-foreground", (warnKeys.has(k) || doubtKey.has(k)) && "text-warn", (now || null) !== before && "bg-edit")}>{nv?.v ?? "—"}</div>
-                    {doubtKey.has(k) && <div className="text-xs text-warn">{doubtWord(doubtKey.get(k)!)}</div>}
-                    {nv?.raw && nv.raw !== nv.v && <div className="raw-clamp text-xs text-muted-foreground">{t("原文：", "Printed: ")}{nv.raw}</div>}
-                    {editing.has(key)
-                      ? <RawEditor value={answer[pi]!.header[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)}
-                          onChange={(x) => update((a) => { a[pi]!.header[k]!.v = x ?? ""; })} onDone={() => doneEdit(key)} />
-                      : <Button variant="link" className={LINK} onClick={() => startEdit(key, (a) => { a[pi]!.header[k] ??= { v: "", box: [0, 0, 0, 0] }; })}>{nv?.raw ? t("修改", "Edit") : t("補上", "Fill in")}</Button>}
-                  </div>
+                  <Field key={k} name={name} value={nv?.v ?? null} printed={nv?.raw && nv.raw !== nv.v ? nv.raw : null} wide={k === "shipping_marks"}
+                    warn={warnKeys.has(k) || doubtKey.has(k)} changed={(now || null) !== before}
+                    note={doubtKey.has(k) && <div className="text-xs text-warn">{doubtWord(doubtKey.get(k)!)}</div>}
+                    onStart={() => startEdit(key, (a) => { a[pi]!.header[k] ??= { v: "", box: [0, 0, 0, 0] }; })}
+                    editor={editing.has(key) && <RawEditor value={answer[pi]!.header[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)}
+                      onChange={(x) => update((a) => { a[pi]!.header[k]!.v = x ?? ""; })} onDone={() => doneEdit(key)} />} />
                 );
               })}
             </div>
@@ -244,33 +248,32 @@ export function Review({ doc, onApproved }: {
               <Table className="text-sm">
                 <TableHeader>
                   <TableRow className="bg-muted hover:bg-muted">
-                    <TableHead className="px-2.5 font-semibold">{t("頁", "Page")}</TableHead>
-                    {L.COLS.map(([k, name, cls]) => (
-                      <TableHead key={k} className={cn("px-2.5 font-semibold", cls === "num" && "text-right", warnCols.has(k) && "text-warn shadow-[inset_0_-3px_0_var(--warn)]")}>{name}</TableHead>
+                    {cols.map(([k, name, cls]) => (
+                      <TableHead key={k} className={cn("px-2 font-semibold", cls === "num" && "text-right", warnCols.has(k) && "text-warn shadow-[inset_0_-3px_0_var(--warn)]")}>{name}</TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {norm.rows.flatMap((r) => {
+                  {norm.rows.flatMap((r, i) => {
                     const pi = r.page - 1, isOpen = openRow?.page === pi && openRow.row === r.row;
-                    const cells = r as unknown as Record<string, V>;
-                    const span = (a: V, b: V) => (a.v ? (a.v === b.v ? a.v : `${a.v}–${b.v}`) : "");
+                    // A page's rows start under a thin divider instead of a Page column on every row.
+                    const divider = run.pages.length > 1 && r.page !== norm.rows[i - 1]?.page && (
+                      <TableRow key={`p${r.page}`} className="hover:bg-transparent">
+                        <TableCell colSpan={cols.length} className="bg-muted/60 px-2 py-1 text-xs font-semibold text-muted-foreground">{t(`第 ${r.page} 頁`, `Page ${r.page}`)}</TableCell>
+                      </TableRow>
+                    );
                     const tr = (
                       <TableRow key={`${pi}-${r.row}`} title={t("點一下看原文", "Click to see the printed text")}
                         className={cn("cursor-pointer hover:bg-primary/5", isOpen && "bg-primary/10 hover:bg-primary/10", rowChanged(orig, answer, pi, r.row) && "[&>td:first-child]:shadow-[inset_4px_0_0_#d6a800]")}
                         onClick={() => { setOpenRow(isOpen ? null : { page: pi, row: r.row }); setCurrent(pi); }}>
-                        <TableCell className="px-2.5 py-2 align-top">{r.page}</TableCell>
-                        {L.COLS.map(([k, , cls]) => {
-                          let content = fmt(cells[k]?.v);
-                          if (k === "pkg_range") content = span(r.pkg_from, r.pkg_to);
-                          if (k === "pallet_range") content = span(r.pallet_from, r.pallet_to);
-                          if (k === "qty" && r.qty_unit.v) content = `${content} ${r.qty_unit.v}`;
+                        {cols.map(([k, , cls]) => {
+                          const content = cellText(r, k);
                           const doubt = doubtAt.get(`${pi}:${r.row}:${k}`);
                           return (
-                            <TableCell key={k} title={doubt !== undefined ? doubtWord(doubt) : undefined} className={cn("px-2.5 py-2 align-top",
+                            <TableCell key={k} title={doubt !== undefined ? doubtWord(doubt) : undefined} className={cn("px-2 py-2 align-top",
                               doubt !== undefined && "bg-warn-bg font-semibold text-warn shadow-[inset_0_0_0_2px_var(--warn-line)]",
                               cls === "num" && "text-right font-mono text-[13px]",
-                              k === "description" ? "min-w-[220px] text-[13px] whitespace-normal" : "whitespace-nowrap",
+                              k === "description" ? "min-w-[160px] text-[13px] whitespace-normal" : "whitespace-nowrap",
                               ["po", "part_no", "pkg_range", "pallet_range"].includes(k) && "font-mono text-[13px]",
                               warnCols.has(k) && "bg-warn-bg shadow-[inset_0_0_0_1px_var(--warn-line)]")}>
                               {content}
@@ -283,10 +286,11 @@ export function Review({ doc, onApproved }: {
                         })}
                       </TableRow>
                     );
-                    if (!isOpen) return [tr];
-                    return [tr, (
+                    const head = divider ? [divider] : [];
+                    if (!isOpen) return [...head, tr];
+                    return [...head, tr, (
                       <TableRow key={`${pi}-${r.row}-raw`} className="hover:bg-transparent">
-                        <TableCell colSpan={L.COLS.length + 1} className="bg-muted px-3.5 py-3 whitespace-normal">
+                        <TableCell colSpan={cols.length} className="bg-muted px-3.5 py-3 whitespace-normal">
                           <RawRow page={answer[pi]!} ri={r.row} before={(ci) => origCell(orig, answer, pi, r.row, ci)}
                             onChange={(ci, x) => update((a) => { a[pi]!.rows[r.row]!.cells[ci] = x; })} onDone={() => void refresh()} />
                         </TableCell>
@@ -333,18 +337,45 @@ function Totals({ norm, orig, answer, warnKeys, editing, onStart, onDone, onChan
           const unit = k.endsWith("_kg") ? " kg" : "";
           const key = `totals.${k}`;
           return (
-            <div key={k}>
-              <div className="text-[13px] text-muted-foreground">{name}</div>
-              <div className={cn("font-semibold break-words", warnKeys.has(k) && "text-warn", pi >= 0 && answer[pi]!.totals[k]?.v !== before && "bg-edit")}>{fmt(nv.v)}{nv.v ? unit : ""}</div>
-              {nv.raw !== nv.v && <div className="raw-clamp text-xs text-muted-foreground">{t("原文：", "Printed: ")}{nv.raw}</div>}
-              {pi >= 0 && (editing.has(key)
-                ? <RawEditor value={answer[pi]!.totals[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)} onChange={(x) => onChange(pi, k, x)} onDone={() => onDone(key)} />
-                : <Button variant="link" className={LINK} onClick={() => onStart(key)}>{t("修改", "Edit")}</Button>)}
-            </div>
+            <Field key={k} name={name} value={nv.v ? `${fmt(nv.v)}${unit}` : null} printed={nv.raw !== nv.v ? nv.raw : null}
+              warn={warnKeys.has(k)} changed={pi >= 0 && answer[pi]!.totals[k]?.v !== before}
+              onStart={pi >= 0 ? () => onStart(key) : undefined}
+              editor={pi >= 0 && editing.has(key) && <RawEditor value={answer[pi]!.totals[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)} onChange={(x) => onChange(pi, k, x)} onDone={() => onDone(key)} />} />
           );
         })}
       </div>
     </Card>
+  );
+}
+
+function Status({ tone, children }: { tone: "ok" | "warn" | "neutral"; children: ReactNode }) {
+  return (
+    <li className={cn("flex items-center gap-2", tone === "ok" && "text-ok", tone === "warn" && "font-semibold text-warn")}>
+      <span aria-hidden="true" className={cn("size-2 flex-none rounded-full", tone === "neutral" ? "bg-muted-foreground/50" : "bg-current")} />
+      {children}
+    </li>
+  );
+}
+
+// One header or total value. The value itself is the control: clicking it opens its printed text for editing.
+function Field({ name, value, printed, warn, changed, note, wide, onStart, editor }: {
+  name: string; value: string | null; printed: string | null; warn: boolean; changed: boolean;
+  note?: ReactNode; wide?: boolean; onStart?: () => void; editor: ReactNode;
+}) {
+  useLang();
+  const shown = cn("font-semibold break-words", !value && "font-normal text-muted-foreground", warn && "text-warn", changed && "bg-edit");
+  return (
+    <div className={cn(wide && "col-span-full")}>
+      <div className="text-[13px] text-muted-foreground">{name}</div>
+      {editor || (onStart
+        ? <button type="button" onClick={onStart} title={value ? t("點一下修改", "Click to edit") : t("點一下補上", "Click to fill in")}
+            className={cn(shown, "group -mx-1.5 block w-[calc(100%+0.75rem)] cursor-text rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring")}>
+            {value ?? <><span className="group-hover:hidden group-focus-visible:hidden">—</span><span className="hidden text-primary group-hover:inline group-focus-visible:inline">{t("補上", "Fill in")}</span></>}
+          </button>
+        : <div className={shown}>{value ?? "—"}</div>)}
+      {note}
+      {printed && <div className="raw-clamp text-xs text-muted-foreground">{t("原文：", "Printed: ")}{printed}</div>}
+    </div>
   );
 }
 

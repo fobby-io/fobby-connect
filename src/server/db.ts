@@ -72,6 +72,8 @@ export interface Db {
   markApproved(space: string, id: string, approved_at: string): Promise<boolean>;
   clearApproved(space: string, id: string): Promise<void>;
   markReopened(space: string, id: string): Promise<void>;
+  /** The row, its approved example and its pending retries, at once. */
+  deleteDoc(space: string, id: string): Promise<void>;
   loadProfiles(space: string): Promise<{ versions: PromptVersion[]; approved: ApprovedRef[] }>;
   /** One transaction; a version's content is never rewritten, only its status. */
   saveProfiles(space: string, c: { put: PromptVersion[]; added: ApprovedRef[]; removed: string[] }): Promise<void>;
@@ -111,6 +113,13 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
       return r.length > 0;
     },
     async clearApproved(space, id) { await db.update(documents).set({ approved_at: null }).where(one(space, id)); },
+    async deleteDoc(space, id) {
+      await db.transaction(async (tx) => {
+        await tx.delete(approvedExamples).where(and(eq(approvedExamples.space_id, space), eq(approvedExamples.doc_id, id)));
+        await tx.delete(retries).where(and(eq(retries.space_id, space), eq(retries.doc_id, id)));
+        await tx.delete(documents).where(one(space, id));
+      });
+    },
     async markReopened(space, id) { await db.update(documents).set({ approved_at: null, reopened: true }).where(one(space, id)); },
     async loadProfiles(space) {
       const vs = await db.select().from(promptVersions).where(eq(promptVersions.space_id, space));

@@ -444,6 +444,15 @@ export function createApp(deps: Deps) {
       await save(d);
       return json(200, view(d));
     }
+    // Deleting removes the row first, so the document is gone from every screen even if a file is left behind; its
+    // example leaves the sender's approved set. Deliveries already sent stay with their receivers.
+    if (req.method === "DELETE" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) {
+      await owned(m[1]!);
+      await db.deleteDoc(await space(), m[1]!);
+      // Hosts list by directory, so the whole runs/ folder is listed: the PDF, the read result and any page images.
+      for (const k of await files.list("runs/")) if (k === `runs/${m[1]}.json` || k === `runs/${m[1]}.pdf` || k.startsWith(`runs/${m[1]}-`)) await files.delete(k);
+      return json(200, { ok: true });
+    }
     throw fail(404, "not_found", path);
   }
 

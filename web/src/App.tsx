@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type SenderInfo } from "./api.ts";
+import { api, creditText, errorMessage, isCreditExhausted, post, request, type Delivery, type Doc, type ListedDoc, type SenderInfo } from "./api.ts";
 import { Approved, PdfPanel, useApproved } from "./Approved.tsx";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
@@ -77,8 +77,8 @@ export function App() {
   else if (screen?.kind === "busy") body = <><Steps at={screen.step} /><Busy title={screen.title}>{screen.text}</Busy></>;
   else if (screen?.kind === "failed")
     body = <Busy title={screen.title}><ErrorText error={screen.error} /><div className="mt-4"><Button variant="outline" onClick={() => { go(""); setRoute({ area: "docs" }); }}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
-  else if (screen?.kind === "review") body = <><Steps at={3} doc={screen.doc} /><Review key={screen.doc.id} doc={screen.doc} onApproved={show} /></>;
-  else if (screen?.kind === "result") body = <><div className="mx-auto max-w-[64rem]"><Steps at={5} doc={screen.doc} /></div><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
+  else if (screen?.kind === "review") body = <><DocBar doc={screen.doc}><Steps at={3} doc={screen.doc} /></DocBar><Review key={screen.doc.id} doc={screen.doc} onApproved={show} /></>;
+  else if (screen?.kind === "result") body = <><div className="mx-auto max-w-[64rem]"><DocBar doc={screen.doc}><Steps at={5} doc={screen.doc} /></DocBar></div><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
 
   const area = route.area === "doc" ? "docs" : route.area;
   const nav: [string, string, string][] = [["docs", "#", t("文件", "Documents")], ["vendors", "#/vendors", t("廠商", "Senders")], ["flow", "#/flow", t("出口流程", "Export flow")]];
@@ -105,6 +105,46 @@ export function App() {
     </>
   );
 }
+
+/** The row above a document: where it is in the workflow, and deleting it. */
+function DocBar({ doc, children }: { doc: Doc; children: ReactNode }) {
+  useLang();
+  const [state, setState] = useState<"idle" | "confirm" | "busy" | { error: unknown }>("idle");
+  async function remove() {
+    setState("busy");
+    try {
+      await request(`/api/documents/${doc.id}`, { method: "DELETE" });
+      go("");
+    } catch (e) {
+      setState({ error: e });
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4">
+      {children}
+      {state === "idle" ? (
+        <Button variant="ghost" size="sm" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => setState("confirm")}>
+          <TrashIcon />{t("刪除", "Delete")}
+        </Button>
+      ) : (
+        // Asked in place: deleting cannot be undone, and an approved document also stops teaching its sender.
+        <div role="group" aria-label={t("確認刪除", "Confirm delete")} className="mb-4 flex flex-wrap items-center gap-2 rounded-full border border-destructive/30 bg-card py-1 pr-1 pl-4 text-sm">
+          <span>{typeof state === "object" ? <span className="text-destructive">{errorMessage(state.error)}</span>
+            : doc.approved ? t("刪除這份文件，並不再從它學習？無法復原。", "Delete this document and stop learning from it? This cannot be undone.")
+            : t("刪除這份文件？無法復原。", "Delete this document? This cannot be undone.")}</span>
+          <Button size="sm" variant="destructive" disabled={state === "busy"} onClick={remove}>{state === "busy" ? t("刪除中…", "Deleting…") : t("刪除", "Delete")}</Button>
+          <Button size="sm" variant="ghost" disabled={state === "busy"} onClick={() => setState("idle")} autoFocus>{t("取消", "Cancel")}</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TrashIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+  </svg>
+);
 
 /** The whole workflow, with where this document is in it. Review shows as skipped when the document was approved automatically. */
 function Steps({ at, doc }: { at: number; doc?: Doc }) {

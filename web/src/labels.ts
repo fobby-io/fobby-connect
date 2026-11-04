@@ -24,7 +24,7 @@ const ZH: Labels = {
   DOC_TYPE: { PL: "裝箱單（Packing List）", SO: "託運單（Shipping Order）" },
   COLS: [
     ["pkg_range", "箱號"], ["pallet_range", "板號"], ["pallets", "板數", "num"], ["pkgs", "箱數", "num"], ["po", "PO 號碼"], ["part_no", "料號"],
-    ["description", "品名"], ["qty_per_pkg", "每箱數量", "num"], ["qty", "數量", "num"], ["nw_kg", "淨重 kg", "num"], ["gw_kg", "毛重 kg", "num"],
+    ["description", "品名"], ["qty_per_pkg", "每箱數量", "num"], ["qty", "數量", "num"], ["nw_kg", "淨重 kg", "num"], ["gw_kg", "毛重 kg", "num"], ["cbm", "材積 m³", "num"],
   ],
 };
 
@@ -46,7 +46,7 @@ const EN: Labels = {
   DOC_TYPE: { PL: "Packing List", SO: "Shipping Order" },
   COLS: [
     ["pkg_range", "Carton no."], ["pallet_range", "Pallet no."], ["pallets", "Pallets", "num"], ["pkgs", "Cartons", "num"], ["po", "PO no."], ["part_no", "Part no."],
-    ["description", "Description"], ["qty_per_pkg", "Qty/ctn", "num"], ["qty", "Quantity", "num"], ["nw_kg", "N.W. kg", "num"], ["gw_kg", "G.W. kg", "num"],
+    ["description", "Description"], ["qty_per_pkg", "Qty/ctn", "num"], ["qty", "Quantity", "num"], ["nw_kg", "N.W. kg", "num"], ["gw_kg", "G.W. kg", "num"], ["cbm", "CBM", "num"],
   ],
 };
 
