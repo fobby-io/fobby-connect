@@ -22,6 +22,8 @@ export const PASS = 0.75, WRONG = 0.5;
 export type Doc = {
   id: string; name: string; normalized: NormDoc; fixes?: Record<string, string | null>; approved: Approved | null; created_at: string | null;
   verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null; deliveries: Delivery[];
+  /** Whether the flow keeps a download output for this sender. */
+  download: boolean;
   source?: { via: "email"; from: string; subject: string } | null;
   run: {
     cls: string | null; sender: string | null; issuer: string | null;

@@ -301,4 +301,23 @@ describe("email", () => {
     expect(again.deliveries[0]).toMatchObject({ ok: false, error: "E_RATE_LIMIT_EXCEEDED", event: "document.corrected", next_at: null });
     expect(await app.retry(new Date(Date.now() + 30 * 86_400_000))).toEqual({ due: 0, sent: 0 });
   });
+
+  it("offers download only when the sender's branch keeps a download output", async () => {
+    const { app } = setup(reads());
+    const doc = await (await call(app, "/api/documents?name=a.pdf", { method: "POST", body: await pdf() })).json();
+    await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).download).toBe(true);
+
+    const put = (nodes: object[], edges: string[][]) => call(app, "/api/flow", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ graph: { autoSend: true, nodes, edges } }) });
+    // ACME has its own branch with a download; every other sender only gets email.
+    await put([{ id: "a", kind: "branch", sender: "ACME", x: 0, y: 0 }, { id: "d", kind: "download", x: 0, y: 0 }, { id: "o", kind: "branch", sender: "*", x: 0, y: 0 }, { id: "e", kind: "email", to: "x@y.test", x: 0, y: 0 }], [["a", "d"], ["o", "e"]]);
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).download).toBe(true);
+    expect((await call(app, `/api/documents/${doc.id}/export.json`)).status).toBe(200);
+
+    await put([{ id: "o", kind: "branch", sender: "*", x: 0, y: 0 }, { id: "e", kind: "email", to: "x@y.test", x: 0, y: 0 }], [["o", "e"]]);
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).download).toBe(false);
+    const off = await call(app, `/api/documents/${doc.id}/export.csv`);
+    expect(off.status).toBe(403);
+    expect((await off.json()).error.code).toBe("download_off");
+  });
 });
