@@ -1,8 +1,10 @@
-# Fobby Rosetta
+# Fobby Connect
 
-Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand: 30–60 minutes per document, and every sender uses its own layout. Rosetta reads them with Meta's Muse Spark into one fixed schema, checks the numbers with code, and learns each sender's layout from the clerk's corrections, so the next document from that sender needs less review.
+**Connects every sender's freight document layout to one schema, and learns each sender so the next document needs less review.**
 
-Live demo: https://rosetta.fobby.io (open a sample shipment, or upload your own PDF).
+Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand: 30–60 minutes per document, and every sender uses its own layout. Fobby Connect reads them with Meta's Muse Spark into one fixed schema, checks the numbers with code, and learns each sender's layout from the clerk's corrections, so the next document from that sender needs less review.
+
+Live demo: https://connect.fobby.io (open a sample shipment, or upload your own PDF).
 
 ## How it works
 
@@ -52,4 +54,4 @@ Sample and test documents are synthetic: invented companies, numbers and product
 
 ## Licence
 
-AGPL-3.0. The hosted version at rosetta.fobby.io runs this code on Cloudflare Workers.
+AGPL-3.0. The hosted version at connect.fobby.io runs this code on Cloudflare Workers.

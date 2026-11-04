@@ -64,7 +64,7 @@ export function App() {
   return (
     <>
       <header className="flex flex-wrap items-center gap-6 border-b bg-card px-6 py-3.5">
-        <h1 className="m-0 text-[17px] font-bold">Fobby Rosetta</h1>
+        <h1 className="m-0 text-[17px] font-bold">Fobby Connect</h1>
         <ol className="steps m-0 flex list-none flex-wrap gap-1.5 p-0">
           {STEPS.map((s, i) => (
             <li key={s} className={cn("flex items-center gap-2 rounded-full bg-muted py-1 pr-3.5 pl-1 text-sm text-muted-foreground",
