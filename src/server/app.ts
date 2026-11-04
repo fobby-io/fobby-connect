@@ -32,6 +32,8 @@ export type Deps = {
   files: Files; db: Db; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string;
   /** Model-backed actions allowed per UTC day (a document read, a column re-read, a corrected approval); none means no cap. */
   dailyReads?: number;
+  /** Webhooks, emails and test events sent a day, for every space together; DAILY_SENDS when not set. */
+  dailySends?: number;
   /** Keeps work going after the answer (a Worker passes ctx.waitUntil); without it the work runs on in this process. Learning that is cut off is picked up by retry(). */
   background?: (p: Promise<unknown>) => void;
 };
@@ -52,6 +54,7 @@ type SenderState = Record<string, { hold?: boolean }>;
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
 const MAX_PAGES = 20;
+const DAILY_SENDS = 200;
 // Every attached PDF is a paid read: one email reads at most this many.
 const MAX_ATTACHMENTS = 5;
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -114,6 +117,8 @@ export function createApp(deps: Deps) {
   // Findings are worked out again on those values, so the page agrees with the checks as they are now.
   const valuesOf = async (d: Saved, pages: Page[]) => {
     const read = normalize(pages);
+    // Only a person's approval puts values of their own in the record; before that it is the read, normalized as now.
+    if (!d.approved && !d.auto?.reasons.includes("reopened")) return { read, n: read, fixes: {} };
     const stored = await db.getValues(await space(), d.id);
     return { read, n: withValues(read, stored), fixes: stored ? fixesOf(read, stored) : {} };
   };
@@ -131,6 +136,14 @@ export function createApp(deps: Deps) {
   async function spend(_kind: "read" | "column" | "learn") {
     if (!deps.dailyReads) return;
     if (!(await db.spend(new Date().toISOString().slice(0, 10), deps.dailyReads))) throw new CreditExhausted(`daily limit of ${deps.dailyReads} reached`);
+  }
+
+  // Anyone can set the flow's URLs and addresses, so what leaves the site (webhooks, emails, test events) has its own
+  // daily cap: the site cannot be used to flood a URL or an inbox.
+  async function outbound(n: number) {
+    const day = `out:${new Date().toISOString().slice(0, 10)}`;
+    for (let i = 0; i < n; i++)
+      if (!(await db.spend(day, deps.dailySends ?? DAILY_SENDS))) throw fail(429, "send_limit", "今天的傳送次數已達上限，明天再試。");
   }
 
   // Each request works on a snapshot of the space's profiles and writes back only the rows it changed, so two requests
@@ -184,14 +197,15 @@ export function createApp(deps: Deps) {
       const l = learnable(answer, fixes);
       const misread = diff(model, l.answer).length;
       const corrected = diff(model, answer).length + Object.keys(fixes).length;
-      if (misread) await spend("learn");
+      // Over the daily cap the approval still stands; only the learning is skipped.
+      const learns = misread > 0 && await spend("learn").then(() => true, (e) => { if (e instanceof CreditExhausted) return false; throw e; });
       await db.putValues(sp, d.id, toValues(values));
       await db.putRuleReviews(sp, d.id, l.review);
       const doc = { doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer: l.answer, model };
       // Nothing misread: only the example is kept, no model call, so it is done now. Otherwise re-reading the sender's
       // approved documents takes minutes and runs after the answer (startLearn, once the document is saved).
-      const learnt = misread ? { outcome: "pending" } : await withStore((s) => learn(s, doc, replayReader(g, s), museRewrite(client)));
-      if (misread) await db.queueLearn(sp, d.id);
+      const learnt = learns ? { outcome: "pending" } : misread ? { outcome: "skipped" } : await withStore((s) => learn(s, doc, replayReader(g, s), museRewrite(client)));
+      if (learns) await db.queueLearn(sp, d.id);
       d.approved = { sender, learn: learnt, corrected, answer: l.answer, approved_at, rules: l.review.length };
       return d.approved;
     } catch (e) {
@@ -206,6 +220,8 @@ export function createApp(deps: Deps) {
     const sp = await space();
     if (!(await db.claimLearn(sp, id, now.toISOString(), new Date(now.getTime() - LEARN_STALE_MS).toISOString()))) return;
     const d = await load(id).catch(() => null);
+    // Approved in the database but the file not written yet (the approval is still finishing): run again once stale.
+    if (d && !d.approved && (await db.listDocs(sp)).find((x) => x.id === id)?.approved_at) return;
     // Reopened or deleted since: nothing to learn from.
     if (!d?.approved?.answer || (d.approved.learn as { outcome?: string })?.outcome !== "pending") return db.dropLearn(sp, id);
     const result = await withStore((s) => learn(s, {
@@ -263,6 +279,7 @@ export function createApp(deps: Deps) {
   async function send(d: Saved, flow: Flow) {
     const event = d.deliveries?.length ? "document.corrected" : "document.approved";
     const sender = d.approved!.sender;
+    await outbound(targets(flow.graph, sender).length + (deps.mail ? recipients(flow.graph, sender).length : 0));
     const n = await approvedValues(d), record = exportJson(d as Exportable, n);
     const out = await Promise.all([
       ...targets(flow.graph, sender).map((t) => deliver(t, event, record, flow.secret)),
@@ -304,7 +321,11 @@ export function createApp(deps: Deps) {
     }
     return { due: due.length, sent };
   }
-  const autoSend = async (d: Saved) => { const f = await getFlow(); if (f.graph?.autoSend) await send(d, f); };
+  // Over the day's send cap the approval still stands; the person can send it later.
+  const autoSend = async (d: Saved) => {
+    const f = await getFlow();
+    if (f.graph?.autoSend) await send(d, f).catch((e) => { if ((e as { code?: string }).code !== "send_limit") throw e; });
+  };
 
   /**
    * After the first read. A sender's first document of a kind goes to a person, who checks every value anyway, so the
@@ -357,7 +378,8 @@ export function createApp(deps: Deps) {
     await files.put(`runs/${id}.pdf`, bytes);
     // Listed as reading at once, so the list shows it while the pages are read; the reader need not wait on this request.
     const sp = await space();
-    const row = { id, name: name || id, sender, cls: null, status: "reading" as const, created_at: new Date().toISOString(), flagged: null, reopened: false, prompt_version_id: null, template_hash: null, model: null };
+    // The name goes into email subjects: one line, bounded.
+    const row = { id, name: name.replace(/[\r\n\t]+/g, " ").trim().slice(0, 200) || id, sender: sender?.slice(0, 200) ?? null, cls: null, status: "reading" as const, created_at: new Date().toISOString(), flagged: null, reopened: false, prompt_version_id: null, template_hash: null, model: null };
     await db.putDoc(sp, row);
     try {
       const pages = await preparePages(bytes);
@@ -444,7 +466,8 @@ export function createApp(deps: Deps) {
       await owned(id);
       // Still being read, or the read failed: only its row exists.
       if (!(await files.get(`runs/${id}.json`))) {
-        const r = (await db.listDocs(await space())).find((x) => x.id === id)!;
+        const r = (await db.listDocs(await space())).find((x) => x.id === id);
+        if (!r) throw fail(404, "not_found", `document ${id}`);
         return json(200, { id, name: r.name, status: r.status, error: r.error ?? null, created_at: r.created_at });
       }
       return json(200, await shown(await load(id)));
@@ -522,6 +545,7 @@ export function createApp(deps: Deps) {
     if (req.method === "POST" && path === "/api/flow/test") {
       const b = await bodyJson<{ name?: string; url?: string }>();
       const f = await getFlow();
+      await outbound(1);
       // A test event is never queued for retry.
       const d = await deliver({ name: String(b.name ?? "Webhook").slice(0, 100), url: String(b.url ?? "") }, "test", { message: "Test delivery from Fobby Connect" }, f.secret);
       return json(200, { ...d, next_at: null });

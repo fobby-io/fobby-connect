@@ -10,7 +10,7 @@ export type LearnResult =
   | { outcome: "activated"; version: Version; tries: number; scores: { candidate: number[]; current: number[] } }
   | { outcome: "kept"; version: Version | null; always_review: string[]; tries: number }
   // Learning runs after the approval answers; failed after three tries.
-  | { outcome: "pending" } | { outcome: "failed" };
+  | { outcome: "pending" } | { outcome: "failed" } | { outcome: "skipped" };
 export type Approved = { sender: string; learn: LearnResult; corrected: number; approved_at?: string; rules?: number };
 // What src/verify/jev.ts and src/server/app.ts return about the second system's check and automatic approval.
 export type PageCheck = { page_no: number; checked: boolean; values: Record<string, number>; rows: (number | null)[][] };

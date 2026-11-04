@@ -64,4 +64,4 @@ createServer(async (req, res) => {
     res.writeHead(500, { "content-type": "application/json" });
     res.end(JSON.stringify({ error: { code: "failed", message: (e as Error).message } }));
   }
-}).listen(port, () => console.log(`review server on http://localhost:${port}`));
+}).listen(port, "127.0.0.1", () => console.log(`review server on http://localhost:${port}`));

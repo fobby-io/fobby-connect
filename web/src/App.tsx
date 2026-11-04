@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, creditText, errorMessage, isCreditExhausted, post, request, type Delivery, type Doc, type ListedDoc, type SenderInfo } from "./api.ts";
+import { api, ApiError, creditText, errorMessage, isCreditExhausted, post, request, type Delivery, type Doc, type ListedDoc, type SenderInfo } from "./api.ts";
 import { Approved, PdfPanel, useApproved } from "./Approved.tsx";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
@@ -250,7 +250,7 @@ function Documents({ onFile, uploading, uploadError }: { onFile: (f: File) => vo
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<"all" | "review" | "done">("all");
   const [intake, setIntake] = useState<string | null>(null);
-  const load = useCallback(() => api<ListedDoc[]>("/api/documents").then(setList, setError), []);
+  const load = useCallback(() => api<ListedDoc[]>("/api/documents").then((x) => { setList(x); setError(null); }, setError), []);
   // Again when an upload starts or ends, and every few seconds while anything is being read.
   useEffect(() => { void load(); }, [load, uploading]);
   const reading = uploading > 0 || !!list?.some((d) => d.status === "reading");
@@ -319,6 +319,8 @@ function Documents({ onFile, uploading, uploadError }: { onFile: (f: File) => vo
           <p className="mt-3 text-[13px] text-muted-foreground">
             {over ? t("放開就開始讀取", "Release to read it") : intake ? <>{t("或把 PDF 拖到這裡，或寄到 ", "or drop a PDF here, or email it to ")}<span className="font-medium text-foreground select-all">{intake}</span></> : t("或把 PDF 拖到這裡", "or drop a PDF here")}
           </p>
+          {/* Until accounts exist every visitor shares one workspace. */}
+          <p className="mt-1 text-xs text-muted-foreground">{t("示範站：上傳的文件所有訪客都看得到，並會定期清除。請勿上傳機密文件。", "Demo site: every visitor can see uploads, and they are cleared regularly. Do not upload confidential documents.")}</p>
           <p className="mt-2 min-h-5 text-[13px]" role="status">
             {uploadError ? <span className="text-destructive">{uploadError.name}：<ErrorText error={uploadError.error} /></span>
               : uploading > 0 ? <span className="text-muted-foreground">{t("讀取中，讀完會出現在清單上。可以繼續上傳。", "Reading; it shows in the list when done. You can upload more.")}</span> : null}
@@ -458,8 +460,14 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   const [l, setL] = useState(a.learn);
   useEffect(() => {
     if (l.outcome !== "pending") return;
+    // Stops when learning ends, the document is reopened or deleted elsewhere, or after 20 minutes.
+    const until = Date.now() + 20 * 60_000;
     const timer = setInterval(() => {
-      api<Doc>(`/api/documents/${doc.id}`).then((d) => { if (d.approved && d.approved.learn.outcome !== "pending") setL(d.approved.learn); }, () => {});
+      if (Date.now() > until) return clearInterval(timer);
+      api<Doc>(`/api/documents/${doc.id}`).then((d) => {
+        if (!d.approved) clearInterval(timer);
+        else if (d.approved.learn.outcome !== "pending") setL(d.approved.learn);
+      }, (e) => { if (e instanceof ApiError && e.status === 404) clearInterval(timer); });
     }, 5000);
     return () => clearInterval(timer);
   }, [doc.id, l.outcome]);
@@ -490,6 +498,10 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   } else if (l.outcome === "failed") {
     tone = "warn";
     title = t("這次的學習沒有完成", "Learning did not finish this time");
+    body = <p>{t("確認和匯出不受影響；這家的讀法維持原樣。", "The approval and exports stand; this sender is read as before.")}</p>;
+  } else if (l.outcome === "skipped") {
+    tone = "warn";
+    title = t("今天的額度用完，這次沒有學習", "Today's reads are used up, so this was not learned from");
     body = <p>{t("確認和匯出不受影響；這家的讀法維持原樣。", "The approval and exports stand; this sender is read as before.")}</p>;
   } else if (l.outcome === "activated") {
     const before = l.scores.current.reduce((x, y) => x + y, 0), after = l.scores.candidate.reduce((x, y) => x + y, 0);

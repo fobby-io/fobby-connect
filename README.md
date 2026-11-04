@@ -10,6 +10,67 @@ Live demo: https://connect.fobby.io. The screen is in English; it reads Chinese 
 2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout: every value is checked, and it is approved without review.
 3. [Shipping order](eval/samples/so-1.pdf), in Chinese, from another sender.
 
+## How the reading pipeline is optimized
+
+OCR alone gives text, not a shipment. The pipeline below turns a PDF into checked, typed values, and it puts the model only where code cannot do the job. Each stage either saves a model call, saves waiting, or catches an error before a person has to.
+
+```mermaid
+flowchart TD
+    A(["PDF in: upload or email"]) --> B{"Text layer on the page?"}
+    B -- "yes: digital PDF" --> C["Positioned text<br/>exact characters, cheap"]
+    B -- "no: scan" --> D["One-page image PDF<br/>for vision"]
+    C --> E{"Sender and class known<br/>from the text layer?"}
+    D --> F["Read page 1 first<br/>issuer and doc type pick the profile"]
+    E -- "yes" --> G["Read every page at once<br/>with the sender's profile"]
+    E -- "no" --> F
+    F --> H["Other pages in parallel<br/>with that profile"]
+    G --> I["Code checks, no model<br/>row sums, totals, pallets, POs in marks,<br/>headers across pages, container check digits"]
+    H --> I
+    I -- "a page fails" --> J["Re-read only that page<br/>with the findings as a hint;<br/>keep it only if it fails less"]
+    J --> K
+    I -- "all pass" --> K["Second system checks every value<br/>against the page text or image"]
+    K --> L{"Known sender, not on hold,<br/>every value verified, rules pass,<br/>same columns as last time?"}
+    L -- "yes" --> M(["Approved and sent<br/>without a person"])
+    L -- "no" --> N["Review: page beside the values,<br/>click a value to correct it"]
+    N --> O["Normalize in code<br/>kg, UN/LOCODE, ISO dates, ranges"]
+    M --> O
+    O --> P[("Standard record<br/>doc_header and doc_rows")]
+    P --> Q(["Export: CSV, JSON,<br/>signed webhook, email"])
+    N -. "corrections" .-> R{"A misread, or a<br/>conversion rule?"}
+    R -- "rule" --> S["rule_reviews<br/>for the rules, not the reader"]
+    R -- "misread" --> T["In the background:<br/>Muse Wonder rewrites the<br/>sender's reading notes"]
+    T --> U{"Replay the sender's approved<br/>documents: no regression?"}
+    U -- "yes" --> V["New notes go live<br/>for this sender"]
+    U -- "no" --> W["Field marked always review"]
+    V -. "next document" .-> G
+
+    classDef model fill:#e8f0ff,stroke:#2f6bff,color:#0b2a6b
+    classDef code fill:#eaf7ef,stroke:#2e9e5b,color:#0f3d22
+    classDef person fill:#fff4e0,stroke:#e08a00,color:#5a3600
+    classDef out fill:#f3f4f6,stroke:#6b7280,color:#111827
+    class F,G,H,J,T model
+    class C,D,I,O,P,S,U code
+    class K model
+    class N person
+    classDef ask fill:#ffffff,stroke:#94a3b8,color:#1f2937
+    class A,M,Q,V,W out
+    class B,E,L,R,U ask
+```
+
+Blue steps call a model, green steps are code only, and the orange step needs a person.
+
+| What we changed | Why it matters |
+|---|---|
+| **Route each page.** Digital pages go to the model as positioned text, and only scanned pages are sent as an image. | Text is exact and costs far fewer tokens. Vision is used only where nothing else works. |
+| **Pick the reading profile early.** When the text layer already names the sender and says "packing list" or "shipping order", every page is read at once with that sender's profile. Otherwise page 1 goes first and its issuer picks the profile. | Multi-page documents from known senders do not wait on page 1. |
+| **Prompt hierarchy.** The fallback prompt sits under a document-class profile, which sits under a sender profile. The sender profile holds notes and examples from that sender's approved documents. | A new sender still reads well, and a known one reads like the documents a person already approved. |
+| **Strict schema, copy only.** The model returns JSON in a fixed schema, copies values as printed, and gives each value a box on the page. | No invented values. Every value can be shown on the page, and the code does all conversions. |
+| **Checks in code, targeted re-reads.** Sums, pallets, POs and cross-page headers are checked without a model. Only a failing page is read again, with the findings as a hint, and the re-read is kept only if it fails fewer checks. | Most errors are caught for free. A re-read costs one page, not a whole document. |
+| **A second system on every value.** For a sender seen before, a separate decision model checks each value against the page. | A document is approved without a person only when two systems agree and every rule passes. |
+| **Normalize once, store one record.** Kilograms, UN/LOCODE ports, ISO dates and package ranges are computed in code and stored one column per field. The raw text is kept beside each value. | Exports, webhooks and email all send the same checked values, whatever layout the sender used. |
+| **Learn from the right corrections.** A correction that matches the printed text is a misread, and the sender's notes are rewritten from it. A correction that comes from a conversion goes to `rule_reviews` instead. New notes go live only if replaying the sender's approved documents shows no regression. | The reader learns only from real misreads, and a sender's reading never gets worse. |
+| **Nobody waits.** An upload is listed as "reading" at once and the list updates when it is done. Learning runs after the approval, in the background. | The clerk keeps working while pages are read and while the reader learns. |
+
 ## How it works
 
 1. **Receive.** Upload a PDF on the screen, or email it to the team's intake address: each attached PDF is read like an upload, and the document shows who sent it.

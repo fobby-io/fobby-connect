@@ -65,7 +65,7 @@ export function normalize(pages: Page[]): NormDoc {
     if (raw && (k === "shipper" || k === "consignee" || k === "notify")) val = splitParty(raw).name;
     header[k] = { ...v(val, raw), page };
   }
-  // A voyage printed after the vessel name ("EVER MERCY V.1366-007E") is split off.
+  // A voyage printed after the vessel name ("BLUE HARBOR V.2201-015E") is split off.
   const ves = header.vessel;
   const m = ves?.raw?.match(/^(.*?)\s+(V\.?\s*\S+|\d{3,}\w*)$/i);
   if (ves?.raw && m) {
@@ -141,7 +141,7 @@ export function normalize(pages: Page[]): NormDoc {
   return { header, rows, totals };
 }
 
-/** PO numbers listed in the shipping marks ("PO#ORD40563,ORD40463,ORD40\n543"), with line breaks inside a number joined. */
+/** PO numbers listed in the shipping marks ("PO#PO71820,PO71833,PO718\n47"), with line breaks inside a number joined. */
 export function marksPos(marks: string | null): string[] {
   if (!marks) return [];
   const m = marks.toUpperCase().match(/P\s*[./]?\s*O\s*(?:NO\.?)?\s*[#:：]?([\s\S]*?)(?:\n\s*[A-Z/ ]{2,}[#:：]|$)/);

@@ -188,7 +188,15 @@ describe("createApp", () => {
     expect(store.size).toBe(0);
   });
 
-  it("stops model-backed actions at the daily cap as credit_exhausted, counting corrected approvals but not clean ones", async () => {
+  it("caps what leaves the site a day: a test event over the cap answers 429 send_limit", async () => {
+    const files = { get: async (k: string) => (k === "space.json" ? new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() })) : null), put: async () => {}, list: async () => [], delete: async () => {} };
+    const app = createApp({ files, db: lazyDb(shared), client: reads(), dailySends: 0 });
+    const r = await call(app, "/api/flow/test", post({ url: "https://example.com/hook" }));
+    expect(r.status).toBe(429);
+    expect((await r.json()).error.code).toBe("send_limit");
+  });
+
+  it("stops reads at the daily cap as credit_exhausted, and approves a corrected document past it without learning", async () => {
     const c = reads();
     const { app, store } = setup(c, undefined, 2);
     const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
@@ -204,7 +212,9 @@ describe("createApp", () => {
     expect([...store.keys()].filter((k) => k.endsWith(".pdf"))).toHaveLength(2);
     const fixed = { ...PAGE, rows: [{ ...PAGE.rows[0]!, cells: ["51"] }] };
     const corrected = await call(app, `/api/documents/${(await second.json()).id}/approve`, post({ sender: "acme", answer: [fixed] }));
-    expect(corrected.status).toBe(402);
+    expect(corrected.status).toBe(200);
+    expect((await corrected.json()).learn.outcome).toBe("skipped");
+    expect(c.mock.calls.length).toBe(calls);
   });
 
   it("refuses a file that is not a PDF, or a broken one, before keeping it", async () => {
