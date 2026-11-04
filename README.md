@@ -2,13 +2,15 @@
 
 **Reads every sender's freight documents into one schema, and learns each sender so the next document needs less review.**
 
+**Demo video (2:46):** https://youtu.be/05ZM_NucMVU
+
 Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by hand. One document takes 30–60 minutes, and every sender prints its own layout.
 
 Fobby Connect reads each page with Meta's Muse Spark into one fixed schema. Code checks the numbers and a second system checks every value. When a clerk corrects a value, Muse Wonder rewrites that sender's prompt, so the sender's next document needs less review. A document from a known sender that passes every check is approved and sent on with no person involved.
 
 ## Try it
 
-Open https://connect.fobby.io and upload these synthetic samples (invented companies) in this order. Each one takes about a minute to read; the list updates by itself.
+Open https://connect.fobby.io: the list already holds these three synthetic samples (invented companies), read and checked, so you can open them right away. To watch a document being read, upload them yourself in this order. Each one takes about a minute to read; the list updates by itself.
 
 1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender. It goes to review: check it against the PDF and approve.
 2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout. Every value is checked, and it is approved without review.
