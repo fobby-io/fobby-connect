@@ -1,6 +1,6 @@
 // One-time move of the state kept as JSON files (before the database) into a Db. Safe to run again: rows that exist
 // are kept, and counts are compared at the end. No Node built-ins, so it runs where the files are (a folder or R2).
-import type { Files, ListedDoc, Saved } from "./app.ts";
+import { listedOf, type Files, type ListedDoc, type Saved } from "./app.ts";
 import type { Approved, PromptVersion } from "../profiles/loop.ts";
 import type { Db } from "./db.ts";
 
@@ -23,15 +23,20 @@ export async function migrateStorage(files: Files, db: Db, o: { apply?: boolean;
   const own = (await Promise.all((await files.list(`${space}/index/`)).map((k) => getJson<ListedDoc>(k)))).filter((x): x is ListedDoc => !!x);
   const seen = new Set(own.map((d) => d.id));
   const listed = [...own, ...((await getJson<ListedDoc[]>("runs/index.json")) ?? []).filter((d) => !seen.has(d.id))];
+  for (const d of listed) seen.add(d.id);
+  // Every saved run is a document, listed or not: writes to the old single list could drop entries.
+  const runIds = (await files.list("runs/")).map((k) => k.match(/^runs\/([\w-]+)\.json$/)?.[1]).filter((id): id is string => !!id && id !== "index");
+  const unlisted = runIds.filter((id) => !seen.has(id));
   let documents = 0;
-  for (const l of listed) {
-    const d = await getJson<Saved>(`runs/${l.id}.json`);
-    if (!d) { notes.push(`document ${l.id} is listed but runs/${l.id}.json is missing: left out`); continue; }
+  for (const [id, l] of [...listed.map((x) => [x.id, x] as const), ...unlisted.map((x) => [x, null] as const)]) {
+    const d = await getJson<Saved>(`runs/${id}.json`);
+    if (!d) { notes.push(`document ${id} is listed but runs/${id}.json is missing: left out`); continue; }
+    const row = l ?? listedOf(d);
     documents++;
     if (!apply) continue;
-    await db.putDoc(space, { ...l, prompt_version_id: d.run.prompt?.id ?? null, template_hash: d.run.template_hash ?? null, model: d.run.model ?? null });
+    await db.putDoc(space, { ...row, prompt_version_id: d.run.prompt?.id ?? null, template_hash: d.run.template_hash ?? null, model: d.run.model ?? null });
     // Documents approved before approved_at was kept still count as approved: their creation time stands in.
-    if (d.approved) await db.markApproved(space, l.id, d.approved.approved_at ?? d.created_at ?? l.created_at);
+    if (d.approved) await db.markApproved(space, row.id, d.approved.approved_at ?? d.created_at ?? row.created_at);
   }
 
   // Profiles: every version with its status, and every approved example, in the order they were approved.

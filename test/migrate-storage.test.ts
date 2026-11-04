@@ -24,6 +24,8 @@ function legacyFiles() {
   put("runs/index.json", [listed("a", "2026-11-02T00:00:00Z"), listed("b", "2026-11-01T00:00:00Z"), listed("gone", "2026-10-30T00:00:00Z")]);
   put("runs/a.json", run({ approved_at: "2026-11-02T01:00:00Z" }));
   put("runs/b.json", run({}));
+  // c was saved but dropped from the old list; it is still a document.
+  put("runs/c.json", { ...run({}), id: "c", name: "c.pdf", created_at: "2026-10-31T00:00:00Z" });
   put("profiles.json", {
     versions: [v(1, "active"), v(2, "active")],
     // a was approved twice (before reopen removed examples): the second, later one must win.
@@ -41,7 +43,7 @@ describe("migrateStorage", () => {
     const db = await pgliteDb();
     const keys = store.size;
     const r = await migrateStorage(files, db, { today: TODAY });
-    expect(r.source).toEqual({ documents: 2, versions: 2, examples: 2, usage_today: 3, holds: 1 });
+    expect(r.source).toEqual({ documents: 3, versions: 2, examples: 2, usage_today: 3, holds: 1 });
     expect(r.database).toBeNull();
     expect(r.notes.join("\n")).toMatch(/gone.*missing/);
     expect(await db.listDocs("s0")).toEqual([]);
@@ -56,7 +58,7 @@ describe("migrateStorage", () => {
     expect(new TextDecoder().decode(store.get("examples/a.json"))).toContain('"a2"');
     expect((await db.loadProfiles("s0")).approved.map((a) => a.doc_id)).toEqual(["b", "a"]);
     const second = await migrateStorage(files, db, { apply: true, today: TODAY });
-    expect(first.database).toEqual({ documents: 2, versions: 2, examples: 2 });
+    expect(first.database).toEqual({ documents: 3, versions: 2, examples: 2 });
     expect(second.database).toEqual(first.database);
     // The duplicate active version is kept, retired; the highest stays active.
     expect(first.notes.join("\n")).toMatch(/sender:ACME\/PL:1.*retired/);
@@ -78,7 +80,7 @@ describe("migrateStorage", () => {
     const noMeta: MetaClient = async () => { throw new Error("no model call expected"); };
     const app = createApp({ files, db, client: noMeta });
     const docs = await (await app.fetch(new Request("http://x/api/documents"))).json() as { id: string }[];
-    expect(docs.map((d) => d.id)).toEqual(["a", "b"]);
+    expect(docs.map((d) => d.id)).toEqual(["a", "b", "c"]);
     const senders = await (await app.fetch(new Request("http://x/api/senders"))).json() as { sender: string; hold: boolean; approved: { count: number }[] }[];
     expect(senders.find((s) => s.sender === "ACME")).toMatchObject({ hold: true, approved: [{ count: 2 }] });
   });

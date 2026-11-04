@@ -64,6 +64,14 @@ const json = (status: number, x: unknown) => new Response(JSON.stringify(x), { s
 const download = (body: string, type: string, filename: string) =>
   new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "content-disposition": `attachment; filename="${filename}"` } });
 
+const senderOf = (d: Saved) => d.approved?.sender ?? d.run.sender ?? ((d.run.issuer ?? "").split("\n")[0]?.trim() || null);
+/** The document's row in the list, from its saved run. Runs saved before created_at was kept use their approval time. */
+export const listedOf = (d: Saved): ListedDoc => ({
+  id: d.id, name: d.name, sender: senderOf(d), cls: d.run.cls, created_at: d.created_at ?? d.approved?.approved_at ?? "",
+  status: d.approved ? (d.auto?.ok ? "auto" : "approved") : "review",
+  flagged: d.verify ? d.verify.flagged : null, reopened: d.auto?.reasons.includes("reopened") ?? false,
+});
+
 export function createApp(deps: Deps) {
   const client = creditGuard(deps.client);
   const { files, db } = deps;
@@ -77,12 +85,7 @@ export function createApp(deps: Deps) {
     for (const p of d.run.pages) for (const k of HEADER_KEYS) p.output.header[k] ??= null;
     return d;
   };
-  const senderOf = (d: Saved) => d.approved?.sender ?? d.run.sender ?? ((d.run.issuer ?? "").split("\n")[0]?.trim() || null);
-  const listed = (d: Saved): ListedDoc => ({
-    id: d.id, name: d.name, sender: senderOf(d), cls: d.run.cls, created_at: d.created_at ?? "",
-    status: d.approved ? (d.auto?.ok ? "auto" : "approved") : "review",
-    flagged: d.verify ? d.verify.flagged : null, reopened: d.auto?.reasons.includes("reopened") ?? false,
-  });
+  const listed = listedOf;
   // Everything a team owns lives under the space named in space.json (s0 without one); a site is reset by writing a new
   // name there. Requests never write it, so requests at once always agree on it.
   const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
