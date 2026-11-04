@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+/* The old page's colour tokens, under shadcn's variable names; the extra ones (chip, warn, ok, edit) are this app's own. */
+:root {
+  --background: #eef1f6;
+  --foreground: #0f1b2d;
+  --card: #ffffff;
+  --card-foreground: #0f1b2d;
+  --popover: #ffffff;
+  --popover-foreground: #0f1b2d;
+  --primary: #1f3a68;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f7fb;
+  --secondary-foreground: #0f1b2d;
+  --muted: #f5f7fb;
+  --muted-foreground: #5d6880;
+  --accent: #f5f7fb;
+  --accent-foreground: #0f1b2d;
+  --destructive: #b42318;
+  --border: #dde3ec;
+  --input: #dde3ec;
+  --ring: #1f3a68;
+  --radius: 10px;
+  --chip: #1f3a68;
+  --chip-foreground: #ffffff;
+  --chip-sub: #b9c7e0;
+  --warn: #8a5300;
+  --warn-bg: #fff3d6;
+  --warn-line: #f0cf83;
+  --ok: #1f7a4a;
+  --ok-bg: #e5f4ec;
+  --edit: #fff1b8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0e131b;
+    --foreground: #e6ebf3;
+    --card: #161d28;
+    --card-foreground: #e6ebf3;
+    --popover: #161d28;
+    --popover-foreground: #e6ebf3;
+    --primary: #8fb3ec;
+    --primary-foreground: #0b1526;
+    --secondary: #1c2432;
+    --secondary-foreground: #e6ebf3;
+    --muted: #1c2432;
+    --muted-foreground: #9aa6ba;
+    --accent: #1c2432;
+    --accent-foreground: #e6ebf3;
+    --destructive: #f97066;
+    --border: #2b3546;
+    --input: #2b3546;
+    --ring: #8fb3ec;
+    --chip: #2a4a80;
+    --chip-foreground: #f1f5fc;
+    --chip-sub: #b7c8e6;
+    --warn: #f2c063;
+    --warn-bg: #33270f;
+    --warn-line: #6d5420;
+    --ok: #7fd3a2;
+    --ok-bg: #14301f;
+    --edit: #4a3f12;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chip: var(--chip);
+  --color-chip-foreground: var(--chip-foreground);
+  --color-chip-sub: var(--chip-sub);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-line: var(--warn-line);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-edit: var(--edit);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --font-sans: system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-sans; font-size: 15px; line-height: 1.5; }
+}
+
+/* Numbered steps; a done step shows a tick. */
+.steps { counter-reset: step; }
+.steps li { counter-increment: step; }
+.steps li::before {
+  content: counter(step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--border); font-size: 12px; background: var(--card);
+}
+.steps li.on::before { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.steps li.done::before { content: "✓"; background: var(--ok-bg); border-color: transparent; color: var(--ok); }
+
+/* Wires from printed columns to standard fields. */
+.wires path { fill: none; stroke: var(--primary); stroke-width: 1.5; opacity: .55; }
+.wires path.edited { stroke: var(--warn); opacity: 1; stroke-width: 2; }
+.wires circle { fill: var(--card); stroke: var(--primary); stroke-width: 1.5; }
+.chip-select option { color: #0f1b2d; }
+
+.raw-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.raw-clamp:hover { -webkit-line-clamp: unset; }
+textarea.raw-edit { field-sizing: content; }
