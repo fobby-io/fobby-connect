@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { dbLedger, docOfStep, type DocRow } from "../src/server/db.ts";
 import { pgliteDb } from "../src/server/pg-node.ts";
 import type { PromptVersion } from "../src/profiles/loop.ts";
@@ -11,6 +11,9 @@ const version = (key: string, v: number, status: PromptVersion["status"]): Promp
   id: `sender:${key}:${v}`, level: "sender", key, version: v, parent: null, status,
   columns: [], notes: [`v${v}`], examples: [], always_review: [], change: "test",
 });
+
+// The first PGlite compiles its wasm, slow on a cold runner: done once here, not inside the first test.
+beforeAll(() => pgliteDb(), 60_000);
 
 describe("database storage", () => {
   it("keeps both changes when two senders' profiles are saved at once", async () => {

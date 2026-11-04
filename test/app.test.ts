@@ -1,5 +1,5 @@
 import { PDFDocument } from "pdf-lib";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { MetaError, type MetaClient } from "../src/gateway/meta-client.ts";
 import type { Page } from "../src/profiles/loop.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
@@ -20,6 +20,8 @@ const PAGE: Page = {
 };
 
 const shared = pgliteDb();
+// Starting PGlite and applying the migrations is slow on a cold runner: done once here, not inside the first test.
+beforeAll(() => shared, 60_000);
 function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>, dailyReads?: number) {
   const store = new Map<string, Uint8Array>();
   // One PGlite per file; each setup is its own space in it, as each team is.

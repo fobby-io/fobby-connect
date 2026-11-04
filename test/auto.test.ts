@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { MetaClient } from "../src/gateway/meta-client.ts";
 import type { Page } from "../src/profiles/loop.ts";
 import { checkDocument } from "../src/rules/checks.ts";
@@ -48,6 +48,8 @@ const jev = (p = 0.99) => {
 };
 
 const shared = pgliteDb();
+// Starting PGlite and applying the migrations is slow on a cold runner: done once here, not inside the first test.
+beforeAll(() => shared, 60_000);
 function setup(decide?: Decide) {
   const store = new Map<string, Uint8Array>();
   // One PGlite per file; each setup is its own space in it, as each team is.

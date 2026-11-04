@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { MetaClient } from "../src/gateway/meta-client.ts";
 import type { PromptVersion } from "../src/profiles/loop.ts";
 import { createApp } from "../src/server/app.ts";
@@ -38,6 +38,9 @@ function legacyFiles() {
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
   return { store, files };
 }
+
+// The first PGlite compiles its wasm, slow on a cold runner: done once here, not inside the first test.
+beforeAll(() => pgliteDb(), 60_000);
 
 describe("migrateStorage", () => {
   it("reports what would move and writes nothing without apply", async () => {
