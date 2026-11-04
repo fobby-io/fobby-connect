@@ -19,10 +19,13 @@ const PAGE: Page = {
   groups: [], totals: { ...(nulls(TOTALS_KEYS) as Page["totals"]), total_pkgs: { v: "50", box: [0, 0, 1, 1] } }, remarks: [],
 };
 
+const shared = pgliteDb();
 function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>, dailyReads?: number) {
   const store = new Map<string, Uint8Array>();
-  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  return { store, app: createApp({ files, db: lazyDb(pgliteDb()), client, mail, dailyReads }) };
+  // One PGlite per file; each setup is its own space in it, as each team is.
+  const own = new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() }));
+  const files = { get: async (k: string) => (k === "space.json" ? own : store.get(k) ?? null), put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
+  return { store, app: createApp({ files, db: lazyDb(shared), client, mail, dailyReads }) };
 }
 const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
