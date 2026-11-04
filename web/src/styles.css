@@ -84,6 +84,8 @@
       radial-gradient(900px 560px at 98% 4%, #e3ecfb 0, transparent 60%), linear-gradient(180deg, #f5f8fd 0, #eaf0f9 100%);
     background-attachment: fixed;
   }
+  h1, h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
   ::selection { background: var(--chip-sub); color: var(--foreground); }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, creditText, errorMessage, isCreditExhausted, post, type Delivery, type Doc, type ListedDoc, type Sample, type SenderInfo } from "./api.ts";
+import { Approved, useApproved } from "./Approved.tsx";
 import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -450,7 +451,9 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   const kind = t(docType, docType.toLowerCase());
   const count = info?.approved.find((x) => x.cls === cls)?.count;
   const active = info?.versions.find((v) => v.status === "active" && v.key.endsWith(`/${cls}`));
-  const n = doc.normalized;
+  const approvedData = useApproved(doc.id, !!a.approved_at);
+  // Counts come from what was approved; documents approved before export existed fall back to what was read.
+  const n = approvedData.rec ?? doc.normalized;
   const sum = (k: string) => n.rows.reduce((x, r) => x + Number((r as unknown as Record<string, { v: string | null }>)[k]?.v ?? 0), 0);
   const v = doc.verify;
   const fields = (ps: string[]) => ps.map((p) => { const k = p.split(".").pop()!; return FIELD[k] ?? HEAD[k] ?? TOTAL[k] ?? p; }).join(t("、", ", "));
@@ -531,6 +534,8 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
         <div className="text-[15px]">{body}</div>
         {next && <p className="mt-3 text-sm text-muted-foreground">{next}</p>}
       </Card>
+
+      {a.approved_at && <Approved {...approvedData} />}
 
       <Export doc={doc} />
 
