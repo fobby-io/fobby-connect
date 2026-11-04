@@ -32,18 +32,14 @@ function initial(senders: string[]): Graph {
   const edges: Edge[] = [["intake", "read"], ["read", "check"], ["check", "approve"], ["approve", "switch"]];
   const branches = [...senders.slice(0, 3), OTHER];
   let y = 24;
-  branches.forEach((s, i) => {
+  branches.forEach((s) => {
     const b = `branch:${s}`;
     nodes.push({ id: b, kind: "branch", sender: s, x: col(5), y });
     edges.push(["switch", b]);
-    // The first sender shows the two-webhook case: one into the team's own system, one into another party's. URLs start
-    // empty, so nothing is sent until someone sets one.
-    const outs: Node[] = i === 0 && s !== OTHER
-      ? [{ id: `${b}:w1`, kind: "webhook", name: t("自己的 ERP", "Own ERP"), url: "", x: col(6), y }, { id: `${b}:w2`, kind: "webhook", name: t("報關行", "Customs broker"), url: "", x: col(6), y: y + H + 16 }]
-      : s === OTHER ? [{ id: `${b}:e`, kind: "email", to: "ops@example.com", x: col(6), y }, { id: `${b}:d`, kind: "download", x: col(6), y: y + H + 16 }]
-        : [{ id: `${b}:d`, kind: "download", x: col(6), y }];
-    outs.forEach((o) => { nodes.push(o); edges.push([b, o.id]); });
-    y += outs.length * (H + 16) + 18;
+    // Only what works with nothing set up: downloads. Webhooks and emails are the team's own, added with + Webhook / + Email.
+    nodes.push({ id: `${b}:d`, kind: "download", x: col(6), y });
+    edges.push([b, `${b}:d`]);
+    y += H + 16 + 18;
   });
   return { nodes, edges, autoSend: true };
 }
