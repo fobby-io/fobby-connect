@@ -5,6 +5,7 @@ import type { Page } from "../src/profiles/loop.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 
 import type { Mail } from "../src/server/app.ts";
+import { lazyDb, pgliteDb } from "../src/server/pg-node.ts";
 
 // Hosts without a file system serve the app too: loading it must not touch node:fs.
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
@@ -21,7 +22,7 @@ const PAGE: Page = {
 function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>, dailyReads?: number) {
   const store = new Map<string, Uint8Array>();
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  return { store, app: createApp({ files, client, mail, dailyReads }) };
+  return { store, app: createApp({ files, db: lazyDb(pgliteDb()), client, mail, dailyReads }) };
 }
 const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
@@ -34,7 +35,7 @@ const call = (app: ReturnType<typeof createApp>, path: string, init?: RequestIni
 const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 describe("createApp", () => {
-  it("uploads, reads and approves a document, keeping the PDF and the learned profile in files", async () => {
+  it("uploads, reads and approves a document, keeping the PDF and the approved example in files", async () => {
     const c = reads();
     const { app, store } = setup(c);
     const up = await call(app, "/api/documents?name=a.pdf", { method: "POST", body: await pdf() });
@@ -46,7 +47,7 @@ describe("createApp", () => {
     const ok = await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).corrected).toBe(0);
-    expect(store.has("profiles.json")).toBe(true);
+    expect(store.has(`examples/${doc.id}.json`)).toBe(true);
     expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved.sender).toBe("ACME");
   });
 

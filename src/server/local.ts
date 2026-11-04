@@ -9,6 +9,7 @@ import { cachedClient } from "../../eval/cache.ts";
 import { metaClient } from "../gateway/meta-client.ts";
 import { jevClient } from "../verify/jev.ts";
 import { createApp, type Files } from "./app.ts";
+import { pgliteDb, urlDb } from "./pg-node.ts";
 
 const DATA = process.env.DATA_DIR ?? "data";
 const SAMPLES = "eval/samples";
@@ -32,7 +33,9 @@ const files: Files = {
 };
 const decide = process.env.OPENROUTER_API_KEY ? jevClient(process.env.OPENROUTER_API_KEY) : undefined;
 if (!decide) console.warn("OPENROUTER_API_KEY is not set: nothing is verified, every document goes to review");
-const app = createApp({ files, client, spent, decide });
+// DATABASE_URL (a direct Postgres URL, e.g. a Neon dev branch) when set; else PGlite kept under DATA_DIR.
+const db = process.env.DATABASE_URL ? await urlDb(process.env.DATABASE_URL) : await pgliteDb(join(DATA, "pg"));
+const app = createApp({ files, db, client, spent, decide });
 // Failed webhook deliveries are tried again when due.
 setInterval(() => void app.retry().catch((e) => console.warn("webhook retry:", (e as Error).message)), 60_000).unref();
 

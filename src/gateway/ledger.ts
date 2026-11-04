@@ -4,7 +4,11 @@ export type AttemptPurpose =
   | "extract" | "reask" | "reread_profile" | "template_fallback" | "rule_reread" | "reextract" | "explain" | "compile" | "publish_check";
 
 export type LedgerEntry = {
+  /** One per attempt. */
+  call_id: string;
   step_id: string;
+  /** Where the request body sent for this step is kept; null when the gateway keeps none. */
+  prompt_key: string | null;
   attempt_purpose: AttemptPurpose;
   attempt: number;
   model: ModelId;

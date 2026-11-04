@@ -5,11 +5,11 @@ import PostalMime from "postal-mime";
 import { z } from "zod";
 import { CreditExhausted, creditGuard } from "../gateway/credit.ts";
 import { gateway } from "../gateway/gateway.ts";
-import { memoryLedger } from "../gateway/ledger.ts";
+import { dbLedger, type ApprovedRef, type Db } from "./db.ts";
 import type { MetaClient } from "../gateway/meta-client.ts";
 import { normalize } from "../normalize/normalize.ts";
 import { matchSender, preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
-import { diff, learn, memoryStore, seed, type Page, type Store } from "../profiles/loop.ts";
+import { diff, learn, memoryStore, seed, type Approved, type Page, type PromptVersion, type Store } from "../profiles/loop.ts";
 import { museRewrite } from "../profiles/rewrite.ts";
 import { checkDocument } from "../rules/checks.ts";
 import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
@@ -29,7 +29,7 @@ export type Mail = { to: string; subject: string; text: string; attachments: { f
  * receiveEmail, shown on the flow screen.
  */
 export type Deps = {
-  files: Files; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string;
+  files: Files; db: Db; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string;
   /** Model-backed actions allowed per UTC day (a document read, a column re-read, a corrected approval); none means no cap. */
   dailyReads?: number;
 };
@@ -56,14 +56,18 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 const toJson = (x: unknown) => enc.encode(JSON.stringify(x));
 const fail = (status: number, code: string, message: string) => Object.assign(new Error(message), { status, code });
 const badAnswer = () => fail(400, "bad_answer", "送出的資料格式不對。");
+// Postgres unique_violation, wherever the driver or Drizzle put it.
+const isUniqueViolation = (e: unknown): boolean => {
+  for (let x = e as { code?: string; cause?: unknown } | undefined; x; x = x.cause as typeof x) if (x.code === "23505") return true;
+  return false;
+};
 const json = (status: number, x: unknown) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json" } });
 const download = (body: string, type: string, filename: string) =>
   new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "content-disposition": `attachment; filename="${filename}"` } });
 
 export function createApp(deps: Deps) {
   const client = creditGuard(deps.client);
-  const g = gateway(client, memoryLedger());
-  const { files } = deps;
+  const { files, db } = deps;
   const spent = () => deps.spent?.() ?? null;
 
   const getJson = async <T>(key: string): Promise<T | null> => { const b = await files.get(key); return b && JSON.parse(dec.decode(b)); };
@@ -80,44 +84,59 @@ export function createApp(deps: Deps) {
     status: d.approved ? (d.auto?.ok ? "auto" : "approved") : "review",
     flagged: d.verify ? d.verify.flagged : null, reopened: d.auto?.reasons.includes("reopened") ?? false,
   });
-  // The document list and sender holds are one small file per document and per sender, so two requests at once never
-  // overwrite each other's entries. They live under the namespace named in space.json (s0 without one); a demo is reset
-  // by writing a new name there. Requests never write it, so requests at once always agree on it.
+  // Everything a team owns lives under the space named in space.json (s0 without one); a demo is reset by writing a new
+  // name there. Requests never write it, so requests at once always agree on it.
   const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
+  const g = gateway(client, dbLedger(db, space), (k, b) => files.put(k, b));
   const entries = async <T>(prefix: string) =>
     (await Promise.all((await files.list(prefix)).map((k) => getJson<T>(k)))).filter((x): x is Awaited<T> & {} => x != null);
-  const docList = async () => {
-    const own = await entries<ListedDoc>(`${await space()}/index/`);
+  const docList = async (): Promise<ListedDoc[]> => {
+    const own: ListedDoc[] = (await db.listDocs(await space())).map(({ id, name, sender, cls, status, created_at, flagged, reopened }) => ({ id, name, sender, cls, status, created_at, flagged, reopened }));
     const ids = new Set(own.map((d) => d.id));
     // Documents listed before the per-document entries existed are still read from the old single list.
     const old = ((await getJson<ListedDoc[]>("runs/index.json")) ?? []).filter((d) => !ids.has(d.id));
     return [...own, ...old].sort((a, b) => b.created_at.localeCompare(a.created_at));
   };
+  // The run JSON first: a row in the list always has its document.
   const save = async (d: Saved) => {
     await files.put(`runs/${d.id}.json`, toJson(d));
-    await files.put(`${await space()}/index/${d.id}.json`, toJson(listed(d)));
+    await db.putDoc(await space(), { ...listed(d), prompt_version_id: d.run.prompt?.id ?? null, template_hash: d.run.template_hash ?? null, model: d.run.model ?? null });
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
   const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
-  // One small file per paid action under usage/<day>/, outside the space, so a demo reset does not refill the day.
-  // shortcut: list-then-put, so requests at the same moment can pass the cap by a few; use a counter store if that matters.
-  async function spend(kind: "read" | "column" | "learn") {
+  // Every paid action (a read, a column re-read, a corrected approval) counts against one daily cap for all spaces.
+  async function spend(_kind: "read" | "column" | "learn") {
     if (!deps.dailyReads) return;
-    const dir = `usage/${new Date().toISOString().slice(0, 10)}/`;
-    if ((await files.list(dir)).length >= deps.dailyReads) throw new CreditExhausted(`daily limit of ${deps.dailyReads} reached`);
-    await files.put(`${dir}${kind}-${crypto.randomUUID()}.json`, toJson({ kind, at: new Date().toISOString() }));
+    if (!(await db.spend(new Date().toISOString().slice(0, 10), deps.dailyReads))) throw new CreditExhausted(`daily limit of ${deps.dailyReads} reached`);
   }
 
-  // Profiles live in one JSON: read per request, written back only when the request changed them.
-  // Assumed: two approvals at the same moment, the later write wins; fine for the demo, Postgres replaces it.
-  async function withStore<T>(f: (s: Store) => Promise<T>): Promise<T> {
-    const m = memoryStore((await getJson("profiles.json")) ?? {});
-    let dirty = false;
-    const s: Store = { ...m, put: (v) => { dirty = true; m.put(v); }, addApproved: (a) => { dirty = true; m.addApproved(a); } };
+  // Each request works on a snapshot of the space's profiles and writes back only the rows it changed, so two requests
+  // for different senders keep both changes. Two that activate a version of the same sender at once hit the one-active
+  // index: the later one runs again once on a fresh snapshot.
+  async function withStore<T>(f: (s: Store) => Promise<T>, again = true): Promise<T> {
+    const sp = await space();
+    const { versions, approved: refs } = await db.loadProfiles(sp);
+    // shortcut: every example of the space is read per request, as profiles.json was; load per sender once spaces grow.
+    const approved = await Promise.all(refs.map(async (r) => ({ ...(await getJson<Omit<Approved, "doc_id" | "sender" | "cls">>(r.key))!, doc_id: r.doc_id, sender: r.sender, cls: r.cls })));
+    const m = memoryStore({ versions, approved });
+    const put: PromptVersion[] = [], added: Approved[] = [];
+    const s: Store = { ...m, put: (v) => { put.push(v); m.put(v); }, addApproved: (a) => { added.push(a); m.addApproved(a); } };
     seed(s);
     const r = await f(s);
-    if (dirty) await files.put("profiles.json", toJson(m.dump()));
+    if (!put.length && !added.length) return r;
+    const refsAdded: ApprovedRef[] = [];
+    for (const a of added) {
+      const key = `examples/${a.doc_id}.json`;
+      await files.put(key, toJson({ pages: a.pages, answer: a.answer, model: a.model }));
+      refsAdded.push({ doc_id: a.doc_id, sender: a.sender, cls: a.cls, key });
+    }
+    try {
+      await db.saveProfiles(sp, { put, added: refsAdded, removed: [] });
+    } catch (e) {
+      if (!again || !isUniqueViolation(e)) throw e;
+      return withStore(f, false);
+    }
     return r;
   }
 
@@ -132,16 +151,25 @@ export function createApp(deps: Deps) {
   const layoutKey = (pages: Page[]) => [...new Set(pages.flatMap((p) => p.columns.map((c) => `${c.field}=${c.label.replace(/\s+/g, " ").trim().toUpperCase()}`)))].sort().join("|");
 
   // Approving saves the answer as this sender's newest example and learns from any correction (the slow part).
+  // The document is claimed first, so of two approvals at once only one learns; a failure releases the claim.
+  // Returns null when another request holds the claim.
   async function approveDoc(d: Saved, sender: string, answer: Page[]) {
-    const model = d.run.pages.map((p) => p.output);
-    const corrected = diff(model, answer).length;
-    // Only a corrected answer makes learning call a model.
-    if (corrected) await spend("learn");
-    const result = await withStore((s) => learn(s, {
-      doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
-    }, replayReader(g, s), museRewrite(client)));
-    d.approved = { sender, learn: result, corrected, answer, approved_at: new Date().toISOString() };
-    return d.approved;
+    const sp = await space(), approved_at = new Date().toISOString();
+    if (!(await db.markApproved(sp, d.id, approved_at))) return null;
+    try {
+      const model = d.run.pages.map((p) => p.output);
+      const corrected = diff(model, answer).length;
+      // Only a corrected answer makes learning call a model.
+      if (corrected) await spend("learn");
+      const result = await withStore((s) => learn(s, {
+        doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
+      }, replayReader(g, s), museRewrite(client)));
+      d.approved = { sender, learn: result, corrected, answer, approved_at };
+      return d.approved;
+    } catch (e) {
+      await db.clearApproved(sp, d.id);
+      throw e;
+    }
   }
 
   // The flow's signing secret is made on first use and kept with the flow.
@@ -221,6 +249,8 @@ export function createApp(deps: Deps) {
    */
   async function intake(d: Saved) {
     d.created_at = new Date().toISOString();
+    // Listed before anything else, so an automatic approval below has a row to claim.
+    await save(d);
     const outputs = d.run.pages.map((p) => p.output);
     const cls = d.run.cls ?? "PL";
     // A sample was read before this sender was known: match its issuer against the senders known now.
@@ -242,7 +272,7 @@ export function createApp(deps: Deps) {
     d.run.findings = checkDocument(outputs);
     if (d.run.findings.length) reasons.push("findings");
     d.auto = { ok: reasons.length === 0, reasons };
-    if (d.auto.ok) { await approveDoc(d, sender!, outputs); await autoSend(d); }
+    if (d.auto.ok && await approveDoc(d, sender!, outputs)) await autoSend(d);
     await save(d);
   }
 
@@ -375,6 +405,12 @@ export function createApp(deps: Deps) {
       // The answer comes from the browser: validate it against the same schema the model output passed.
       const answer = pagesOf(b.answer);
       const a = await approveDoc(d, sender, answer);
+      if (!a) {
+        // Another request claimed it: its result once saved, else it is still learning.
+        const won = (await load(d.id)).approved;
+        if (!won) throw fail(409, "approving", "這份文件正在確認中。");
+        return json(200, { corrected: won.corrected, learn: won.learn, approved_at: won.approved_at, spent: spent() });
+      }
       // A sender on hold earns automatic approval back with a document a person approved without any correction.
       if (a.corrected === 0) await setHold(sender, false);
       await autoSend(d);
@@ -411,8 +447,9 @@ export function createApp(deps: Deps) {
     if (req.method === "POST" && (m = path.match(/^\/api\/documents\/([\w-]+)\/reopen$/))) {
       const d = await load(m[1]!);
       if (!d.approved) return json(200, view(d));
-      const prof = await getJson<{ versions: unknown[]; approved: { doc_id: string }[] }>("profiles.json");
-      if (prof) await files.put("profiles.json", toJson({ ...prof, approved: prof.approved.filter((x) => x.doc_id !== d.id) }));
+      const sp = await space();
+      await db.markReopened(sp, d.id);
+      await db.saveProfiles(sp, { put: [], added: [], removed: [d.id] });
       await setHold(d.approved.sender, true);
       d.approved = undefined;
       d.auto = { ok: false, reasons: ["reopened"] };
