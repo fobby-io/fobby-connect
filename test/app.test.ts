@@ -245,6 +245,30 @@ describe("createApp", () => {
     expect(Object.keys(doc.run.prompt)).toEqual(["id", "level", "key", "version"]);
   });
 
+  it("lists a document as reading while it is read, as failed with why when the read ends early or is cut off", async () => {
+    const { app } = setup(async () => { throw new MetaError(0, false, "fetch failed"); });
+    expect((await call(app, "/api/documents?name=bad.pdf", { method: "POST", body: await pdf() })).status).toBe(500);
+    const [bad] = await (await call(app, "/api/documents")).json();
+    expect(bad).toMatchObject({ name: "bad.pdf", status: "failed" });
+    expect(bad.error).toMatch(/fetch failed/);
+    expect(await (await call(app, `/api/documents/${bad.id}`)).json()).toMatchObject({ status: "failed", error: bad.error });
+
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const c = reads();
+    const slow = setup(async (...a: Parameters<typeof c>) => { await gate; return c(...a); });
+    const up = call(slow.app, "/api/documents?name=slow.pdf", { method: "POST", body: await pdf() });
+    let row: { id: string; status: string } | undefined;
+    while (!row) row = (await (await call(slow.app, "/api/documents")).json())[0];
+    expect(row.status).toBe("reading");
+    expect(await (await call(slow.app, `/api/documents/${row.id}`)).json()).toMatchObject({ status: "reading", name: "slow.pdf" });
+    await slow.app.retry(new Date(Date.now() + 11 * 60_000));
+    expect((await (await call(slow.app, "/api/documents")).json())[0]).toMatchObject({ status: "failed", error: expect.stringMatching(/中斷/) });
+    release();
+    expect((await up).status).toBe(200);
+    expect((await (await call(slow.app, "/api/documents")).json())[0].status).toBe("review");
+  });
+
   it("returns errors in one shape", async () => {
     const { app } = setup(reads());
     const r = await call(app, "/api/documents/nope");

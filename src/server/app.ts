@@ -45,8 +45,8 @@ export type Saved = {
   approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string; rules?: number };
 };
 export type ListedDoc = {
-  id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
-  created_at: string; flagged: number | null; reopened: boolean;
+  id: string; name: string; sender: string | null; cls: string | null; status: "reading" | "failed" | "review" | "approved" | "auto";
+  created_at: string; flagged: number | null; reopened: boolean; error?: string | null;
 };
 type SenderState = Record<string, { hold?: boolean }>;
 
@@ -67,6 +67,9 @@ const json = (status: number, x: unknown) => new Response(JSON.stringify(x), { s
 const download = (body: string, type: string, filename: string) =>
   new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "content-disposition": `attachment; filename="${filename}"` } });
 
+const readError = (e: unknown) => e instanceof CreditExhausted ? "示範額度已用完。" : `讀取沒有完成：${String((e as Error)?.message ?? e).slice(0, 300)}`;
+// A read still listed as reading after this was cut off (the tab or the host's request ended).
+const READ_STALE_MS = 10 * 60_000;
 const senderOf = (d: Saved) => d.approved?.sender ?? d.run.sender ?? ((d.run.issuer ?? "").split("\n")[0]?.trim() || null);
 /** The document's row in the list, from its saved run. Runs saved before created_at was kept use their approval time. */
 export const listedOf = (d: Saved): ListedDoc => ({
@@ -97,7 +100,7 @@ export function createApp(deps: Deps) {
   const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
   const g = gateway(client, dbLedger(db, space), (k, b) => files.put(k, b));
   const docList = async (): Promise<ListedDoc[]> => {
-    const own: ListedDoc[] = (await db.listDocs(await space())).map(({ id, name, sender, cls, status, created_at, flagged, reopened }) => ({ id, name, sender, cls, status, created_at, flagged, reopened }));
+    const own: ListedDoc[] = (await db.listDocs(await space())).map(({ id, name, sender, cls, status, created_at, flagged, reopened, error }) => ({ id, name, sender, cls, status, created_at, flagged, reopened, error }));
     return own.sort((a, b) => b.created_at.localeCompare(a.created_at));
   };
   // The run JSON first: a row in the list always has its document.
@@ -283,6 +286,8 @@ export function createApp(deps: Deps) {
     // Learning that was cut off (a Worker ends after its answer) runs here, every minute.
     await learnDue(now);
     const sp = await space();
+    for (const r of await db.listDocs(sp))
+      if (r.status === "reading" && now.getTime() - Date.parse(r.created_at) > READ_STALE_MS) await db.putDoc(sp, { ...r, status: "failed", error: "讀取被中斷，請重新上傳。" });
     const due = await db.dueRetries(sp, now.toISOString());
     const flow = await getFlow();
     let sent = 0;
@@ -308,7 +313,7 @@ export function createApp(deps: Deps) {
    * sender's last approved document had. Anything else goes to review, with the reasons.
    */
   async function intake(d: Saved) {
-    d.created_at = new Date().toISOString();
+    d.created_at ??= new Date().toISOString();
     // Listed before anything else, so an automatic approval below has a row to claim.
     await save(d);
     const outputs = d.run.pages.map((p) => p.output);
@@ -350,11 +355,23 @@ export function createApp(deps: Deps) {
     await spend("read");
     const id = newId();
     await files.put(`runs/${id}.pdf`, bytes);
-    const pages = await preparePages(bytes);
-    const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender }));
-    const d: Saved = { id, name: name || id, run, pages, ...(source && { source }) };
-    await intake(d);
-    return d;
+    // Listed as reading at once, so the list shows it while the pages are read; the reader need not wait on this request.
+    const sp = await space();
+    const row = { id, name: name || id, sender, cls: null, status: "reading" as const, created_at: new Date().toISOString(), flagged: null, reopened: false, prompt_version_id: null, template_hash: null, model: null };
+    await db.putDoc(sp, row);
+    try {
+      const pages = await preparePages(bytes);
+      const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender }));
+      // Deleted while it was being read: nothing is written back.
+      if (!(await db.hasDoc(sp, id))) throw fail(404, "not_found", `document ${id}`);
+      const d: Saved = { id, name: row.name, run, pages, created_at: row.created_at, ...(source && { source }) };
+      await intake(d);
+      return d;
+    } catch (e) {
+      // A read that ended before its result was saved stays listed as failed, with why; one saved already stays in review.
+      if (await db.hasDoc(sp, id) && !(await files.get(`runs/${id}.json`))) await db.putDoc(sp, { ...row, status: "failed", error: readError(e) });
+      throw e;
+    }
   }
 
   /**
@@ -422,7 +439,16 @@ export function createApp(deps: Deps) {
       if (!pdf) throw fail(404, "not_found", `document ${m[1]}`);
       return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });
     }
-    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, await shown(await load(m[1]!)));
+    if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) {
+      const id = m[1]!;
+      await owned(id);
+      // Still being read, or the read failed: only its row exists.
+      if (!(await files.get(`runs/${id}.json`))) {
+        const r = (await db.listDocs(await space())).find((x) => x.id === id)!;
+        return json(200, { id, name: r.name, status: r.status, error: r.error ?? null, created_at: r.created_at });
+      }
+      return json(200, await shown(await load(id)));
+    }
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/export\.(csv|json)$/))) {
       const d = await load(m[1]!);
       if (!d.approved?.answer || !d.approved.approved_at) throw fail(409, "not_approved", "這份文件還沒核准，核准後才能匯出。");

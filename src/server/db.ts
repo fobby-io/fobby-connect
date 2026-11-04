@@ -11,6 +11,8 @@ export const documents = pgTable("documents", {
   name: text().notNull(), sender: text(), cls: text(), status: text().notNull(),
   created_at: text().notNull(), flagged: integer(), reopened: boolean().notNull().default(false),
   approved_at: text(), prompt_version_id: text(), template_hash: text(), model: text(),
+  // Why reading failed, on a document whose status is "failed".
+  error: text(),
 }, (t) => [primaryKey({ columns: [t.space_id, t.id] })]);
 
 export const promptVersions = pgTable("prompt_versions", {
@@ -90,7 +92,7 @@ export type DocValues = {
 export type RetryRow ={ delivery_id: string; doc_id: string; due: string };
 
 export type DocRow = {
-  id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
+  id: string; name: string; sender: string | null; cls: string | null; status: "reading" | "failed" | "review" | "approved" | "auto"; error?: string | null;
   created_at: string; flagged: number | null; reopened: boolean;
   approved_at: string | null; prompt_version_id: string | null; template_hash: string | null; model: string | null;
 };
@@ -141,12 +143,12 @@ export interface Db {
 // Any Drizzle Postgres database: node-postgres (Hyperdrive, Neon) or PGlite (tests, local without a URL).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function pgDb(db: PgDatabase<any, any, any>): Db {
-  const docCols = { id: documents.id, name: documents.name, sender: documents.sender, cls: documents.cls, status: documents.status, created_at: documents.created_at, flagged: documents.flagged, reopened: documents.reopened, approved_at: documents.approved_at, prompt_version_id: documents.prompt_version_id, template_hash: documents.template_hash, model: documents.model };
+  const docCols = { id: documents.id, name: documents.name, sender: documents.sender, cls: documents.cls, status: documents.status, created_at: documents.created_at, flagged: documents.flagged, reopened: documents.reopened, approved_at: documents.approved_at, prompt_version_id: documents.prompt_version_id, template_hash: documents.template_hash, model: documents.model, error: documents.error };
   const one = (space: string, id: string) => and(eq(documents.space_id, space), eq(documents.id, id));
   return {
     async putDoc(space, d) {
       await db.insert(documents).values({ ...d, space_id: space })
-        .onConflictDoUpdate({ target: [documents.space_id, documents.id], set: { name: d.name, sender: d.sender, cls: d.cls, status: d.status, created_at: d.created_at, flagged: d.flagged, reopened: d.reopened, prompt_version_id: d.prompt_version_id, template_hash: d.template_hash, model: d.model } });
+        .onConflictDoUpdate({ target: [documents.space_id, documents.id], set: { name: d.name, sender: d.sender, cls: d.cls, status: d.status, created_at: d.created_at, flagged: d.flagged, reopened: d.reopened, prompt_version_id: d.prompt_version_id, template_hash: d.template_hash, model: d.model, error: d.error ?? null } });
     },
     async listDocs(space) {
       return await db.select(docCols).from(documents).where(eq(documents.space_id, space)).orderBy(desc(documents.created_at)) as DocRow[];

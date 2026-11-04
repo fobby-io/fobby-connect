@@ -36,6 +36,13 @@
       "when": 1793815879929,
       "tag": "0004_learn_jobs_and_rule_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793817016765,
+      "tag": "0005_doc_read_error",
+      "breakpoints": true
     }
   ]
 }

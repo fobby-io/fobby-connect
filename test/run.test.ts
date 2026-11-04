@@ -50,6 +50,16 @@ describe("runDocument", () => {
     expect(text(c.reqs[2]!)).toContain("ACME NOTE");
   });
 
+  it("reads every page at once with the sender's profile when the text layer names the sender and the class", async () => {
+    const s = memoryStore({ versions: [v({ level: "class", key: "PL" }), v({ level: "sender", key: "ACME/PL", notes: ["ACME NOTE"] })] });
+    const c = fake(() => page(["50"], "150"));
+    const textPage = (n: number): PageInput => ({ ...vision(n), route: "text", items: [{ text: "ACME CORP", box: [0, 10, 100, 20] }, { text: "PACKING LIST", box: [0, 40, 100, 50] }] as PageInput["items"] });
+    const r = await runDocument(gateway(c, memoryLedger()), s, [textPage(1), textPage(2), textPage(3)], { doc_id: "d" });
+    expect(r.sender).toBe("ACME");
+    expect(c.reqs).toHaveLength(3); // one read per page, none waiting on page 1
+    for (const q of c.reqs) expect(text(q)).toContain("ACME NOTE");
+  });
+
   it("re-reads only the failing page with the findings as a hint, and keeps it when it passes", async () => {
     const s = memoryStore({ versions: [v({ level: "class", key: "PL" })] });
     const c = fake((req) => (text(req).includes("Checks found problems") ? page(["50", "36"], "86", null) : page(["5", "36"], "86", null)));

@@ -24,6 +24,8 @@ const parse = (h: string): Route => {
 };
 export const go = (hash: string) => { location.hash = hash; };
 
+// A document still being read, or whose read failed, before it has a result.
+type Pending = { id: string; name: string; status: "reading" | "failed"; error: string | null };
 type Screen =
   | { kind: "busy"; title: string; text: string; step: number }
   | { kind: "failed"; title: string; error: unknown }
@@ -48,7 +50,20 @@ export function App() {
     if (route.area !== "doc" || shown.current === route.id) return;
     shown.current = route.id;
     setScreen({ kind: "busy", title: t("打開文件中…", "Opening the document…"), text: "", step: 0 });
-    api<Doc>(`/api/documents/${route.id}`).then(show, (e) => setScreen({ kind: "failed", title: t("打不開這份文件", "Could not open this document"), error: e }));
+    let timer: ReturnType<typeof setTimeout> | undefined, alive = true, waiting = true;
+    // A document still being read has only its row: wait here, asking again every few seconds.
+    const open = () => api<Doc | Pending>(`/api/documents/${route.id}`).then((d) => {
+      if (!alive) return;
+      waiting = false;
+      if ("normalized" in d) return show(d);
+      waiting = d.status === "reading";
+      if (d.status === "failed") return setScreen({ kind: "failed", title: t("讀取失敗", "Read failed"), error: new Error(d.error ?? "") });
+      setScreen({ kind: "busy", title: t(`正在讀取 ${d.name}…`, `Reading ${d.name}…`), step: 1, text: t("每頁約 5–15 秒，讀完會自動打開。你可以先回清單做別的事。", "About 5–15 seconds a page; it opens when done. You can go back to the list meanwhile.") });
+      timer = setTimeout(open, 3000);
+    }, (e) => setScreen({ kind: "failed", title: t("打不開這份文件", "Could not open this document"), error: e }));
+    open();
+    // Left while still reading: coming back asks again.
+    return () => { alive = false; clearTimeout(timer); if (waiting) shown.current = null; };
   }, [route]);
 
   const show = (doc: Doc) => {
@@ -57,21 +72,23 @@ export function App() {
     if (location.hash !== `#${doc.id}`) go(doc.id);
   };
 
+  // Nobody waits on a read: the document is listed as reading at once and the list updates itself when it is done.
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState<{ name: string; error: unknown } | null>(null);
   async function upload(f: File) {
-    // The busy screen lives in the document area before the document has an id.
-    shown.current = "";
-    setScreen({ kind: "busy", title: t(`正在讀取 ${f.name}…`, `Reading ${f.name}…`), step: 1,
-      text: t("每頁約 5–15 秒。", "About 5–15 seconds a page.") });
-    setRoute({ area: "doc", id: "" });
+    setUploadError(null);
+    setUploading((n) => n + 1);
     try {
-      show(await api<Doc>(`/api/documents?${new URLSearchParams({ name: f.name })}`, { method: "POST", body: f }));
+      await api<Doc>(`/api/documents?${new URLSearchParams({ name: f.name })}`, { method: "POST", body: f });
     } catch (e) {
-      setScreen({ kind: "failed", title: t("讀取失敗", "Read failed"), error: e });
+      setUploadError({ name: f.name, error: e });
+    } finally {
+      setUploading((n) => n - 1);
     }
   }
 
   let body: ReactNode = null;
-  if (route.area === "docs") body = <Documents onFile={upload} />;
+  if (route.area === "docs") body = <Documents onFile={upload} uploading={uploading} uploadError={uploadError} />;
   else if (route.area === "vendors") body = <Vendors />;
   else if (route.area === "flow") body = <Flow />;
   else if (screen?.kind === "busy") body = <><Steps at={screen.step} /><Busy title={screen.title}>{screen.text}</Busy></>;
@@ -182,6 +199,8 @@ export function ErrorText({ error }: { error: unknown }) {
 export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
   // The dot carries the colour so the word stays readable; amber waits for a person, green is done, blue was done without one.
   const tag = "gap-1.5 rounded-full border-0 px-2.5 py-0.5 text-xs font-medium before:size-1.5 before:rounded-full before:bg-current before:content-['']";
+  if (d.status === "reading") return <Badge className={cn(tag, "bg-muted text-muted-foreground before:animate-pulse")}>{t("讀取中", "Reading")}</Badge>;
+  if (d.status === "failed") return <Badge className={cn(tag, "bg-destructive/10 text-destructive")}>{t("讀取失敗", "Read failed")}</Badge>;
   if (d.status === "auto") return <Badge className={cn(tag, "bg-accent text-primary")}>{t("自動確認", "Auto-approved")}</Badge>;
   if (d.status === "approved") return <Badge className={cn(tag, "bg-ok-bg text-ok")}>{t("已確認", "Approved")}</Badge>;
   return <Badge className={cn(tag, "bg-warn-bg text-warn")}>{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
@@ -222,7 +241,7 @@ export function ViaEmail({ doc }: { doc: Doc }) {
 
 export const when = (iso: string) => (iso ? new Date(iso).toLocaleString(t("zh-TW", "en-US"), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 
-function Documents({ onFile }: { onFile: (f: File) => void }) {
+function Documents({ onFile, uploading, uploadError }: { onFile: (f: File) => void; uploading: number; uploadError: { name: string; error: unknown } | null }) {
   useLang();
   const { DOC_TYPE } = labels();
   const input = useRef<HTMLInputElement>(null);
@@ -231,13 +250,22 @@ function Documents({ onFile }: { onFile: (f: File) => void }) {
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<"all" | "review" | "done">("all");
   const [intake, setIntake] = useState<string | null>(null);
+  const load = useCallback(() => api<ListedDoc[]>("/api/documents").then(setList, setError), []);
+  // Again when an upload starts or ends, and every few seconds while anything is being read.
+  useEffect(() => { void load(); }, [load, uploading]);
+  const reading = uploading > 0 || !!list?.some((d) => d.status === "reading");
   useEffect(() => {
-    api<ListedDoc[]>("/api/documents").then(setList, setError);
+    if (!reading) return;
+    const timer = setInterval(load, 3000);
+    return () => clearInterval(timer);
+  }, [reading, load]);
+  useEffect(() => {
     api<{ intake: string | null }>("/api/flow").then((f) => setIntake(f.intake), () => setIntake(null));
   }, []);
   const toReview = list?.filter((d) => d.status === "review") ?? [];
-  const shown = !list ? [] : filter === "review" ? toReview : filter === "done" ? list.filter((d) => d.status !== "review") : list;
-  const filters = [["all", t("全部", "All"), list?.length ?? 0], ["review", t("待審核", "To review"), toReview.length], ["done", t("已確認", "Approved"), (list?.length ?? 0) - toReview.length]] as const;
+  const done = list?.filter((d) => d.status === "approved" || d.status === "auto") ?? [];
+  const shown = !list ? [] : filter === "review" ? toReview : filter === "done" ? done : list;
+  const filters = [["all", t("全部", "All"), list?.length ?? 0], ["review", t("待審核", "To review"), toReview.length], ["done", t("已確認", "Approved"), done.length]] as const;
   const head = "h-10 px-3 text-[13px] font-semibold text-muted-foreground";
   const cell = "px-3 py-3";
   const panel = "gap-0 p-5";
@@ -290,6 +318,10 @@ function Documents({ onFile }: { onFile: (f: File) => void }) {
           <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
           <p className="mt-3 text-[13px] text-muted-foreground">
             {over ? t("放開就開始讀取", "Release to read it") : intake ? <>{t("或把 PDF 拖到這裡，或寄到 ", "or drop a PDF here, or email it to ")}<span className="font-medium text-foreground select-all">{intake}</span></> : t("或把 PDF 拖到這裡", "or drop a PDF here")}
+          </p>
+          <p className="mt-2 min-h-5 text-[13px]" role="status">
+            {uploadError ? <span className="text-destructive">{uploadError.name}：<ErrorText error={uploadError.error} /></span>
+              : uploading > 0 ? <span className="text-muted-foreground">{t("讀取中，讀完會出現在清單上。可以繼續上傳。", "Reading; it shows in the list when done. You can upload more.")}</span> : null}
           </p>
         </section>
       </div>
@@ -345,7 +377,9 @@ function Documents({ onFile }: { onFile: (f: File) => void }) {
                     <TableCell className={cn(cell, "max-w-[16rem] truncate")}>{d.sender ?? <span className="text-muted-foreground">{t("還不認得", "Not known yet")}</span>}</TableCell>
                     <TableCell className={cell}>{statusBadge(d)}</TableCell>
                     <TableCell className={cell}>
-                      {d.flagged === null ? <span className="text-muted-foreground">{t("未核對", "Not checked")}</span>
+                      {d.status === "failed" ? <span className="block max-w-[18rem] truncate text-destructive" title={d.error ?? ""}>{d.error}</span>
+                        : d.status === "reading" ? <span className="text-muted-foreground">—</span>
+                        : d.flagged === null ? <span className="text-muted-foreground">{t("未核對", "Not checked")}</span>
                         : d.flagged ? <span className="font-medium text-warn">{t(`${d.flagged} 個待確認`, `${d.flagged} flagged`)}</span>
                         : <span className="text-muted-foreground">{t("全部通過", "All passed")}</span>}
                     </TableCell>

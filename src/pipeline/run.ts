@@ -74,15 +74,22 @@ export async function runDocument(g: Gateway, s: Store, pages: PageInput[], o: {
 
   // Steps 2-3: the title words give the class on a text page; on a scan, page 1's own doc_type and issuer decide.
   const top = pages[0]!.items.filter((i) => i.box[1] < 300).map((i) => i.text).join(" ");
-  const first = selectPrompt(s, { sender: o.sender ?? null, cls: headerClass(top || null, null) });
-  let p1 = await read(first, pages[0]!);
-  const cls = headerClass(top || null, p1.doc_type);
-  const sender = o.sender ?? matchSender(p1.issuer, s.senders());
+  const textCls = headerClass(top || null, null);
+  const guess = o.sender ?? matchSender(top || null, s.senders());
+  const first = selectPrompt(s, { sender: guess, cls: textCls });
+  // Sender and class both known from the text layer: every page is read at once instead of waiting on page 1.
+  const early = !!(guess && textCls);
+  const readAll = (v: PromptVersion | null) => Promise.all((early ? pages : pages.slice(0, 1)).map((p) => read(v, p)));
+  let outputs = await readAll(first);
+  const cls = headerClass(top || null, outputs[0]!.doc_type);
+  const sender = o.sender ?? matchSender(outputs[0]!.issuer, s.senders());
   const prompt = selectPrompt(s, { sender, cls });
-  if (instructionsFor(s, prompt) !== instructionsFor(s, first)) p1 = await read(prompt, pages[0]!);
+  // Page 1 names another sender whose reading differs: read again with its instructions.
+  if (instructionsFor(s, prompt) !== instructionsFor(s, first)) outputs = await readAll(prompt);
+  const p1 = outputs[0]!;
 
   // Step 4.
-  const outputs = [p1, ...(await Promise.all(pages.slice(1).map((p) => read(prompt, p))))];
+  if (!early) outputs = [p1, ...(await Promise.all(pages.slice(1).map((p) => read(prompt, p))))];
   const reread = outputs.map(() => false);
 
   // Steps 5-6: re-read only pages with findings, once; keep the re-read when it has fewer findings.

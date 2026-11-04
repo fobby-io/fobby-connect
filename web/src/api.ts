@@ -39,8 +39,8 @@ export type Delivery = {
   attempt?: number; next_at?: string | null;
 };
 export type ListedDoc = {
-  id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
-  created_at: string; flagged: number | null; reopened: boolean;
+  id: string; name: string; sender: string | null; cls: string | null; status: "reading" | "failed" | "review" | "approved" | "auto";
+  created_at: string; flagged: number | null; reopened: boolean; error?: string | null;
 };
 export type ReadingVersion = { id: string; key: string; version: number; status: string; notes: string[]; columns: { field: string; label: string }[]; always_review: string[]; change: string; examples: number };
 export type SenderInfo = { sender: string; hold: boolean; versions: ReadingVersion[]; approved: { cls: string; count: number }[]; docs: ListedDoc[] };
