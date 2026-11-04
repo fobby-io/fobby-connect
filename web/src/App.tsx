@@ -92,12 +92,12 @@ export function App() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-3">
-          <button type="button" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label={lang === "zh" ? "Switch to English" : "切換成中文"}
-            className="cursor-pointer rounded-md border bg-transparent px-2 py-1 text-sm text-muted-foreground hover:text-foreground">
-            {lang === "zh" ? "EN" : "中文"}
-          </button>
+          <LangSwitch lang={lang} />
           {/* AGPL §13: people using the hosted site get a way to the source. */}
-          <a href="https://github.com/fobby-io/fobby-connect" target="_blank" rel="noreferrer" className="text-sm text-muted-foreground underline-offset-4 hover:underline">{t("原始碼", "Source")}</a>
+          <a href="https://github.com/fobby-io/fobby-connect" target="_blank" rel="noreferrer" title={t("原始碼（GitHub）", "Source code (GitHub)")} aria-label={t("原始碼（GitHub）", "Source code (GitHub)")}
+            className="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
+            <GitHubMark />
+          </a>
         </div>
       </header>
       <main className="mx-auto max-w-[1600px] px-6 pt-5 pb-32">{body}</main>
@@ -180,6 +180,27 @@ export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
   if (d.status === "approved") return <Badge variant="secondary" className="rounded-full">{t("已確認", "Approved")}</Badge>;
   return <Badge className="rounded-full bg-warn-bg text-warn">{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
 };
+// Both languages always visible, the current one filled: a single "EN" button read as the language you were in.
+function LangSwitch({ lang }: { lang: string }) {
+  const opts = [["zh", "中文"], ["en", "EN"]] as const;
+  return (
+    <div role="group" aria-label={t("介面語言", "Language")} className="flex rounded-full border bg-muted p-0.5 text-[13px]">
+      {opts.map(([l, label]) => (
+        <button key={l} type="button" aria-pressed={lang === l} onClick={() => setLang(l)} lang={l === "zh" ? "zh-Hant" : "en"}
+          className={cn("cursor-pointer rounded-full border-0 px-2.5 py-1 leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            lang === l ? "bg-card font-semibold text-foreground shadow-sm" : "bg-transparent text-muted-foreground hover:text-foreground")}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+// GitHub's mark, from Octicons (MIT).
+const GitHubMark = () => (
+  <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
+    <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" />
+  </svg>
+);
+
 /** Who emailed this document in, and the subject line; nothing for an upload. */
 export function ViaEmail({ doc }: { doc: Doc }) {
   if (doc.source?.via !== "email") return null;
