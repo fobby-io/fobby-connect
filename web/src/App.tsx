@@ -77,7 +77,7 @@ export function App() {
   else if (screen?.kind === "failed")
     body = <Busy title={screen.title}><ErrorText error={screen.error} onOpen={show} /><div className="mt-4"><Button variant="outline" onClick={() => { go(""); setRoute({ area: "docs" }); }}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
   else if (screen?.kind === "review") body = <><Steps at={3} doc={screen.doc} /><Review key={screen.doc.id} doc={screen.doc} onOpen={show} onApproved={show} /></>;
-  else if (screen?.kind === "result") body = <><Steps at={5} doc={screen.doc} /><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
+  else if (screen?.kind === "result") body = <><div className="mx-auto max-w-[64rem]"><Steps at={5} doc={screen.doc} /></div><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
 
   const area = route.area === "doc" ? "docs" : route.area;
   const nav: [string, string, string][] = [["docs", "#", t("文件", "Documents")], ["vendors", "#/vendors", t("廠商", "Senders")], ["flow", "#/flow", t("出口流程", "Export flow")]];
@@ -111,7 +111,7 @@ function Steps({ at, doc }: { at: number; doc?: Doc }) {
   const auto = !!doc?.auto?.ok;
   // A first document goes straight to a person without the second check.
   const first = !!doc && !doc.verify && !!doc.auto?.reasons.includes("unknown_sender");
-  const names = [t("收件", "Received"), t("第一系統讀取", "First read"), first ? t("第二系統核對（新廠商略過）", "Second check (skipped: new sender)") : t("第二系統核對", "Second check"),
+  const names = [t("收件", "Received"), t("第一系統讀取", "First read"), first ? t("第二系統核對（新廠商，略過）", "Second check (new sender, skipped)") : t("第二系統核對", "Second check"),
     auto ? t("審核（自動略過）", "Review (skipped)") : t("人工審核", "Review"), t("確認並學習", "Approve and learn"), t("送出", "Send")];
   return (
     <ol className="steps mb-4 flex list-none flex-wrap gap-1.5 p-0" aria-label={t("處理流程", "Workflow")}>
@@ -383,6 +383,9 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
   );
 }
 
+// "1 document", "3 documents"; Chinese has no plural.
+const many = (n: number, word: string) => t(`${n} 份${word}`, `${n} ${word}${n === 1 ? "" : "s"}`);
+
 function Export({ doc }: { doc: Doc }) {
   useLang();
   const [copy, setCopy] = useState<"idle" | "done" | "failed">("idle");
@@ -401,29 +404,32 @@ function Export({ doc }: { doc: Doc }) {
     catch { setCopy("failed"); }
   };
   return (
-    <Card className={SECTION}>
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-base font-bold">{t("送出", "Send")}</h3>
-        <a href="#/flow" className="text-sm text-primary">{t("設定這家要送到哪裡（Webhook、Email）→", "Set where this sender's documents go (webhook, email) →")}</a>
+    <Card className="gap-0 p-6">
+      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold">{t("送出資料", "Export")}</h2>
+        <a href="#/flow" className="text-sm text-primary">{t("這家送到哪裡 →", "Where this sender's documents go →")}</a>
       </div>
       {doc.approved?.approved_at ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild><a href={`${base}.json`} download>{t("完整資料（JSON）", "Full record (JSON)")}</a></Button>
-          <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("Excel 表格（只有明細，CSV）", "Excel table (line items only, CSV)")}</a></Button>
-          <Button variant="outline" onClick={copyUrl}>{t("複製下載網址", "Copy download URL")}</Button>
-          <Button variant="outline" disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("送到 Webhook／Email", "Send to webhooks and email")}</Button>
-          <span role="status" className="text-sm text-muted-foreground">
-            {copy === "done" && t("已複製", "Copied")}
+        <>
+          <p className="mb-4 text-sm text-muted-foreground">{t("JSON 是完整資料（表頭、貨櫃、明細、總計，每個值都附原文）；CSV 一列一筆明細，可以直接用 Excel 打開。",
+            "JSON is the full record: header, containers, line items and totals, each value with its printed text. CSV has one line item per row, for Excel.")}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("現在送出", "Send now")}</Button>
+            <Button asChild variant="outline"><a href={`${base}.json`} download>{t("下載 JSON", "Download JSON")}</a></Button>
+            <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("下載 CSV", "Download CSV")}</a></Button>
+            <Button variant="ghost" onClick={copyUrl}>{copy === "done" ? t("已複製", "Copied") : t("複製 JSON 網址", "Copy JSON link")}</Button>
+          </div>
+          <div role="status" className="mt-2 text-sm text-muted-foreground empty:hidden">
             {copy === "failed" && <>{t("無法自動複製，請手動複製：", "Could not copy; copy it by hand: ")}<code className="select-all break-all">{url}</code></>}
             {typeof sending === "object" && <span className="text-destructive" role="alert">{errorMessage(sending.error)}</span>}
-          </span>
-        </div>
+          </div>
+        </>
       ) : (
         <p className="text-muted-foreground">{t("這份在匯出功能上線前核准，沒有存下核准內容。重新上傳再核准一次即可匯出。", "This document was approved before export existed, so its approved content was not stored. Upload it again and approve it once more to export.")}</p>
       )}
       {deliveries.length > 0 && (
         <>
-          <h4 className="mt-4 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h4>
+          <h3 className="mt-5 mb-1 text-sm font-semibold">{t("送出紀錄", "Deliveries")}</h3>
           <ul className="list-none p-0">{deliveries.map((d) => <DeliveryRow key={d.id} d={d} />)}</ul>
         </>
       )}
@@ -438,101 +444,103 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   const [info, setInfo] = useState<SenderInfo | null>(null);
   const [reopen, setReopen] = useState<"idle" | "busy" | { error: unknown }>("idle");
   useEffect(() => { api<SenderInfo[]>("/api/senders").then((s) => setInfo(s.find((x) => x.sender === a.sender) ?? null), () => {}); }, [a.sender]);
-  const docType = DOC_TYPE[doc.run.cls ?? ""] ?? t("文件", "document");
-  const count = info?.approved.find((x) => x.cls === (doc.run.cls ?? "PL"))?.count;
-  const active = info?.versions.find((v) => v.status === "active" && v.key.endsWith(`/${doc.run.cls ?? "PL"}`));
+  const cls = doc.run.cls ?? "PL";
+  const docType = DOC_TYPE[cls] ?? t("文件", "document");
+  // In an English sentence the type is a common noun.
+  const kind = t(docType, docType.toLowerCase());
+  const count = info?.approved.find((x) => x.cls === cls)?.count;
+  const active = info?.versions.find((v) => v.status === "active" && v.key.endsWith(`/${cls}`));
   const n = doc.normalized;
   const sum = (k: string) => n.rows.reduce((x, r) => x + Number((r as unknown as Record<string, { v: string | null }>)[k]?.v ?? 0), 0);
   const v = doc.verify;
+  const fields = (ps: string[]) => ps.map((p) => { const k = p.split(".").pop()!; return FIELD[k] ?? HEAD[k] ?? TOTAL[k] ?? p; }).join(t("、", ", "));
 
   const markWrong = async () => {
     setReopen("busy");
     try { onReopened(await post<Doc>(`/api/documents/${doc.id}/reopen`, {})); } catch (e) { setReopen({ error: e }); }
   };
 
-  // What was learned is the point of this screen, so it comes first.
-  let learnCard: ReactNode;
+  // What happened to this sender's reading is the point of this screen, so it comes first.
+  let tone: "ok" | "warn" | "plain" = "plain", title: string, body: ReactNode, next: string | null = null;
   if (l.outcome === "activated") {
     const before = l.scores.current.reduce((x, y) => x + y, 0), after = l.scores.candidate.reduce((x, y) => x + y, 0);
-    learnCard = (
-      <div className="rounded-2xl bg-ok-bg px-6 py-5">
-        <p className="mb-1 text-sm font-semibold text-ok">{t("學到了", "Learned")}</p>
-        <h2 className="mb-2 text-xl font-bold">{t(`${a.sender} 的${docType}讀法更新到第 ${l.version.version} 版`, `${a.sender}'s ${docType} reading is now version ${l.version.version}`)}</h2>
-        <p className="my-1">{t(`你改了 ${a.corrected} 處。Muse Wonder 拿你的修正對照原文找出讀錯的原因，改寫這家的讀法；新讀法重讀這家已確認的 ${l.scores.candidate.length} 份文件，需要修改的地方從 ${before} 處降到 ${after} 處，確定沒有變差才採用。`,
-          `You corrected ${a.corrected} field(s). Muse Wonder compared your corrections with the printed page to find why they were misread and rewrote this sender's reading; it re-read this sender's ${l.scores.candidate.length} approved document(s): corrections needed went from ${before} to ${after}, and it was adopted only because nothing got worse.`)}</p>
+    tone = "ok";
+    title = t(`學到了：${a.sender} 的${docType}讀法更新到第 ${l.version.version} 版`, `Learned: ${a.sender}'s ${kind} reading is now version ${l.version.version}`);
+    body = (
+      <>
+        <p>{t(`你改了 ${a.corrected} 處。Muse Wonder 拿你的修正對照原文找出讀錯的原因，改寫了這家的讀法。用新讀法重讀這家已確認的 ${l.scores.candidate.length} 份文件，要改的地方從 ${before} 處降到 ${after} 處，沒有任何一份變差，所以採用。`,
+          `You corrected ${a.corrected === 1 ? "1 value" : `${a.corrected} values`}. Muse Wonder compared them with the printed page, found why they were misread and rewrote this sender's reading. Re-reading ${many(l.scores.candidate.length, "approved document")} with it, the corrections needed went from ${before} to ${after} and none got worse, so it was adopted.`)}</p>
         {l.version.notes.length
           ? <ul className="mt-2 list-disc pl-5">{l.version.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          : <p className="my-1">{t("這次學到的是這家的欄位排列，並把這份存成範例。", "What was learned is this sender's column layout, with this document kept as an example.")}</p>}
-        <p className="mt-2 text-sm">{t(`下一份 ${a.sender} 的${docType}會用這版讀，全部核對通過就自動確認。`, `The next ${docType} from ${a.sender} is read with this version and approved automatically if every value passes.`)}</p>
-      </div>
+          : <p className="mt-2">{t("這次學到的是這家的欄位排列。", "What it learned is this sender's column layout.")}</p>}
+      </>
     );
+    next = t(`下一份 ${a.sender} 的${docType}會用第 ${l.version.version} 版讀，全部核對通過就自動確認。`, `The next ${kind} from ${a.sender} is read with version ${l.version.version} and approved without you if every value passes.`);
   } else if (l.outcome === "kept") {
-    learnCard = (
-      <div className="rounded-2xl bg-warn-bg px-6 py-5">
-        <p className="mb-1 text-sm font-semibold text-warn">{t("這次沒學會", "Not learned this time")}</p>
-        <h2 className="mb-2 text-xl font-bold">{t("改過的欄位以後固定請你確認", "The corrected fields will always come to you")}</h2>
-        <p className="my-1">{t(`你改了 ${a.corrected} 處，但試了 ${l.tries} 種新寫法都沒有讀得更好，所以維持原本的讀法。以後這家的這些欄位會固定請你確認：`,
-          `You corrected ${a.corrected} field(s), but none of ${l.tries} rewritten readings did better, so the current reading stays. These fields will always come to you for this sender: `)}
-          {l.always_review.map((p) => { const k = p.split(".").pop()!; return FIELD[k] ?? HEAD[k] ?? TOTAL[k] ?? p; }).join(t("、", ", "))}{t("。", ".")}</p>
-      </div>
-    );
+    tone = "warn";
+    title = t("這次沒學會，改過的欄位以後固定請你確認", "Not learned this time; the corrected fields will always come to you");
+    body = <p>{t(`你改了 ${a.corrected} 處，但試了 ${l.tries} 種新讀法都沒有讀得更好，所以維持原本的讀法。這家以後這些欄位固定請人確認：${fields(l.always_review)}。`,
+      `You corrected ${a.corrected === 1 ? "1 value" : `${a.corrected} values`}, but none of ${l.tries} rewritten readings did better, so the reading stays as it was. For this sender these fields will always be reviewed by a person: ${fields(l.always_review)}.`)}</p>;
+  } else if (auto) {
+    tone = "ok";
+    title = t("沒有經過人工，自動確認", "Approved without a person");
+    body = <p>{t(`四個條件都成立：認得的廠商、欄位跟上一份一樣、第二系統核對 ${v?.checked ?? 0} 個值全部通過、自動檢查全部通過。`,
+      `All four conditions held: a known sender, the same columns as last time, all ${v?.checked ?? 0} values passed the second check, and every rule passed.`)}</p>;
+  } else if (count === 1) {
+    title = t(`認得 ${a.sender} 了`, `${a.sender} is now known`);
+    body = <p>{t(`你沒有改任何值，這份就成為 ${a.sender} ${docType}的第一個範例，記下這家的欄位排列。`, `You changed nothing, so this document becomes the first example of how ${a.sender} lays out a ${kind}.`)}</p>;
+    next = t("下一份開始，第二系統會逐一核對每個值；全部通過就不用經過你。", "From the next one on, the second system checks every value; if all pass, it is approved without you.");
   } else {
-    learnCard = (
-      <div className="rounded-2xl border bg-card px-6 py-5">
-        <p className="mb-1 text-sm font-semibold text-muted-foreground">{auto ? t("自動確認", "Approved automatically") : t("全對", "All correct")}</p>
-        <h2 className="mb-2 text-xl font-bold">{auto
-          ? t(`${a.sender} 這份全部核對通過，沒有經過人工`, `Every value from ${a.sender} passed, with no person involved`)
-          : t("沒有新東西要學，這家的格式記住了", "Nothing new to learn; this sender's layout is remembered")}</h2>
-        <p className="my-1">{auto
-          ? t(`認得的廠商、欄位跟上一份一樣、第二系統核對 ${v?.checked ?? 0} 個值全部通過、自動核對全部通過，四個條件都成立。`,
-            `A known sender, the same columns as last time, all ${v?.checked ?? 0} values passed the second check, and every rule passed.`)
-          : t("第一系統讀的每個值你都確認了，所以讀法維持不變，這份存成這家的範例。", "You confirmed every value the first system read, so the reading stays as it is and this document is kept as an example.")}</p>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {count ? t(`這家的${docType}已確認 ${count} 份`, `${count} approved ${docType}(s) from this sender`) : ""}
-          {active ? t(`，讀法第 ${active.version} 版。`, `, reading version ${active.version}.`) : count ? t("，用通用讀法。", ", read with the general reading.") : ""}
-          {!auto && info && !info.hold ? t("下一份全部核對通過就自動確認。", " The next one is approved automatically if every value passes.") : ""}
-        </p>
-      </div>
-    );
+    title = t("照讀到的內容確認", "Approved as read");
+    body = <p>{t("你沒有改任何值，讀法維持不變，這份存成這家的範例。", "You changed nothing, so the reading stays as it is and this document is kept as an example.")}</p>;
+    if (count) next = t(`這家的${docType}已確認 ${count} 份，${active ? `用讀法第 ${active.version} 版` : "用通用讀法"}。`,
+      `${many(count, `approved ${kind}`)} from this sender so far, ${active ? `read with version ${active.version}` : "read with the general reading"}.`);
   }
+  if (info?.hold) next = t("這家的自動確認暫停中：下一份人工審核完全沒改，就恢復。", "Automatic approval for this sender is paused until a reviewed document needs no change.");
+
+  const stats: [number, string][] = [[n.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("gw_kg"), t("毛重 kg", "gross kg")]];
+  if (v) stats.push([v.checked, t("個值核對過", "values checked")]);
 
   return (
-    <>
-      <section className="mb-4 rounded-2xl border bg-card px-6 py-5">
-        <div className="flex flex-wrap items-start gap-6">
-          <div className="flex-[1_1_320px]">
-            <div className="mb-1 flex flex-wrap items-center gap-2">
+    <div className="mx-auto grid max-w-[64rem] grid-cols-[minmax(0,1fr)] gap-5">
+      <Card className="gap-0 p-6">
+        <div className="flex flex-wrap items-start gap-4">
+          <DocIcon so={cls === "SO"} />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.3px]">{doc.name}</h1>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               {statusBadge({ status: auto ? "auto" : "approved", reopened: false })}
-              <span className="text-sm text-muted-foreground">{a.approved_at ? when(a.approved_at) : ""}</span>
-            </div>
-            <h1 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${a.sender} 的${docType}`, `${docType} from ${a.sender}`)}</h1>
-            <p className="text-muted-foreground">{doc.name}</p>
+              <span>{a.sender}</span>
+              {a.approved_at && <span>· {when(a.approved_at)}</span>}
+            </p>
             <ViaEmail doc={doc} />
           </div>
-          <div className="flex flex-wrap gap-2.5">
-            {([[n.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("gw_kg"), t("毛重 kg", "gross kg")], [v?.checked ?? 0, t("核對過的值", "values checked")]] as const).map(([x, label]) => (
-              <div key={label} className="min-w-[110px] rounded-xl border bg-muted px-3.5 py-2">
-                <b className="block font-mono text-[22px] leading-tight font-semibold">{fmt(String(Math.round(x * 1000) / 1000))}</b>
-                <span className="text-xs text-muted-foreground">{label}</span>
-              </div>
-            ))}
-          </div>
         </div>
-      </section>
+        <dl className="m-0 mt-5 grid grid-cols-2 gap-y-3 border-t pt-4 min-[600px]:grid-cols-4">
+          {stats.map(([x, label], i) => (
+            <div key={label} className={cn("px-4 first:pl-0", i % 2 && "border-l", i === 2 && "min-[600px]:border-l")}>
+              <dd className="m-0 text-2xl font-semibold">{fmt(String(Math.round(x * 1000) / 1000))}</dd>
+              <dt className="text-[13px] text-muted-foreground">{label}</dt>
+            </div>
+          ))}
+        </dl>
+      </Card>
 
-      <div className="mb-4">{learnCard}</div>
+      <Card className={cn("gap-0 p-6", tone === "ok" && "bg-ok-bg/80", tone === "warn" && "bg-warn-bg/80")}>
+        <h2 className={cn("mb-2 text-lg font-semibold", tone === "ok" && "text-ok", tone === "warn" && "text-warn")}>{title}</h2>
+        <div className="text-[15px]">{body}</div>
+        {next && <p className="mt-3 text-sm text-muted-foreground">{next}</p>}
+      </Card>
+
       <Export doc={doc} />
 
-      <Card className={SECTION}>
-        <h3 className="mb-1 text-base font-bold">{t("發現這份有錯？", "Found a mistake?")}</h3>
-        <p className="mb-3 text-[13px] text-muted-foreground">{t("重新打開審核，改完再確認一次，系統會拿這次修正去學。這家會先暫停自動確認，直到下一份人工審核完全沒改。",
-          "Reopen it for review, correct it and approve again; the correction is learned. Automatic approval for this sender pauses until a reviewed document needs no change.")}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="outline" disabled={reopen === "busy"} onClick={markWrong}>{t("這份有錯，重新審核", "This is wrong, reopen")}</Button>
-          <Button variant="ghost" onClick={() => go("")}>{t("回到文件清單", "Back to documents")}</Button>
-          {typeof reopen === "object" && <span className="text-sm text-destructive" role="alert">{errorMessage(reopen.error)}</span>}
-        </div>
-      </Card>
-    </>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1 text-sm text-muted-foreground">
+        <span className="min-w-0 grow basis-[24rem]">{t("發現錯誤？重新審核並改正，系統會從修正中學習；這家的自動確認會先暫停。",
+          "Spotted a mistake? Reopen it and correct it; the fix is learned, and automatic approval for this sender pauses meanwhile.")}</span>
+        <Button variant="outline" size="sm" disabled={reopen === "busy"} onClick={markWrong}>{t("重新審核", "Reopen for review")}</Button>
+        <a href="#" className="text-primary">{t("回到文件清單", "Back to documents")}</a>
+        {typeof reopen === "object" && <span className="w-full text-destructive" role="alert">{errorMessage(reopen.error)}</span>}
+      </div>
+    </div>
   );
 }
