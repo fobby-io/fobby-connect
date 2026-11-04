@@ -24,6 +24,7 @@
     "decimal.js": "^10.6.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",
+    "postal-mime": "^4.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwind-merge": "^3.7.0",

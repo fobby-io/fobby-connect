@@ -1,5 +1,6 @@
 // The team's export flow: received → first read → second check → approved, then one branch per sender into its outputs.
-// The flow is kept on the server (src/server/webhook.ts reads it): webhooks and download work, email is still to come.
+// The flow is kept on the server (src/server/webhook.ts reads it). Email outputs and the intake address work only where
+// the server was given a way to send and receive mail (Host).
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { api, errorMessage, post, request, type Delivery, type SenderInfo } from "./api.ts";
 import { SECTION, when } from "./App.tsx";
@@ -14,6 +15,8 @@ type Kind = "intake" | "read" | "check" | "approve" | "switch" | "branch" | "web
 type Node = { id: string; kind: Kind; x: number; y: number; sender?: string; name?: string; url?: string; to?: string };
 type Edge = [from: string, to: string];
 type Graph = { nodes: Node[]; edges: Edge[]; autoSend: boolean };
+/** What this server can do with mail: send the email outputs, and the address it reads PDFs from. */
+type Host = { mail: boolean; intake: string | null };
 
 const W = 160, H = 64, STEP = 180;
 const col = (i: number) => 16 + i * STEP;
@@ -51,13 +54,14 @@ export function Flow() {
   useLang();
   const [g, setG] = useState<Graph | null>(null);
   const [secret, setSecret] = useState("");
+  const [host, setHost] = useState<Host>({ mail: false, intake: null });
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | { error: unknown }>("idle");
   const [sel, setSel] = useState<string | null>(null);
   // What the server has, so opening the screen does not write it back; a flow the server lacks is saved at once.
   const stored = useRef("");
   useEffect(() => {
-    api<{ graph: Graph | null; secret: string }>("/api/flow")
-      .then(async (f) => { setSecret(f.secret); if (f.graph) stored.current = JSON.stringify(f.graph); setG(f.graph ?? await fresh()); }, async () => setG(await fresh()));
+    api<{ graph: Graph | null; secret: string } & Host>("/api/flow")
+      .then(async (f) => { setSecret(f.secret); setHost({ mail: f.mail, intake: f.intake }); if (f.graph) stored.current = JSON.stringify(f.graph); setG(f.graph ?? await fresh()); }, async () => setG(await fresh()));
   }, []);
   // Saved a moment after the last change, so dragging a node is one write, not one per pixel.
   useEffect(() => {
@@ -105,8 +109,8 @@ export function Flow() {
 
       {/* The canvas needs the full width for seven columns, so the settings go under it. */}
       <div className="grid items-start gap-4">
-        <Canvas g={g} sel={sel} onSelect={setSel} onMove={(id, x, y) => patch(id, { x, y })} />
-        <Inspector g={g} node={selected} secret={secret} onPatch={patch} onRemove={remove} onAutoSend={(v) => setG({ ...g, autoSend: v })} />
+        <Canvas g={g} host={host} sel={sel} onSelect={setSel} onMove={(id, x, y) => patch(id, { x, y })} />
+        <Inspector g={g} host={host} node={selected} secret={secret} onPatch={patch} onRemove={remove} onAutoSend={(v) => setG({ ...g, autoSend: v })} />
       </div>
     </>
   );
@@ -116,9 +120,9 @@ const kindName = (k: Kind) => ({
   intake: t("收件", "Received"), read: t("第一系統讀取", "First read"), check: t("第二系統核對", "Second check"), approve: t("確認", "Approved"),
   switch: t("依寄件公司分支", "Branch by sender"), branch: t("廠商", "Sender"), webhook: "Webhook", email: "Email", download: t("下載", "Download"),
 })[k];
-const sub = (n: Node) => {
+const sub = (n: Node, host: Host) => {
   switch (n.kind) {
-    case "intake": return t("上傳 PDF・email（即將推出）", "PDF upload, email (coming)");
+    case "intake": return host.intake ? t(`上傳 PDF・寄到 ${host.intake}`, `PDF upload, or email to ${host.intake}`) : t("上傳 PDF", "PDF upload");
     case "read": return t("Meta 模型讀出每個欄位", "Meta model reads every field");
     case "check": return t("Jev 逐一核對（認得的廠商）", "Jev checks each value (known senders)");
     case "approve": return t("全部通過自動確認，否則人工", "Automatic when all pass, else a person");
@@ -129,13 +133,14 @@ const sub = (n: Node) => {
     case "download": return t("JSON・CSV", "JSON, CSV");
   }
 };
-const live = (k: Kind) => k !== "email";
+const live = (k: Kind, host: Host) => k !== "email" || host.mail;
 
 /** One delivery: who got it, the status code they answered and their receipt id. */
 export function DeliveryRow({ d }: { d: Delivery }) {
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b py-1.5 text-[13px] last:border-b-0">
-      <span className={cn("rounded-full px-1.5 font-mono text-[11px]", d.ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}>{d.status ?? t("沒送到", "failed")}</span>
+      <span className={cn("rounded-full px-1.5 font-mono text-[11px]", d.ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}>{d.status ?? (d.ok ? t("已寄出", "sent") : t("沒送到", "failed"))}</span>
+      {d.url.startsWith("mailto:") && <span className="text-muted-foreground">{d.url.slice(7)}</span>}
       <b>{d.name}</b>
       <span className="text-muted-foreground">{d.event}</span>
       <span className="text-muted-foreground">{d.receipt ? t(`收據 ${d.receipt}`, `receipt ${d.receipt}`) : d.ok ? t("對方沒回收據編號", "no receipt id returned") : d.error ?? ""}</span>
@@ -161,7 +166,7 @@ function TestSend({ node }: { node: Node }) {
   );
 }
 
-function Canvas({ g, sel, onSelect, onMove }: { g: Graph; sel: string | null; onSelect: (id: string) => void; onMove: (id: string, x: number, y: number) => void }) {
+function Canvas({ g, host, sel, onSelect, onMove }: { g: Graph; host: Host; sel: string | null; onSelect: (id: string) => void; onMove: (id: string, x: number, y: number) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; dx: number; dy: number; moved: boolean } | null>(null);
   const [, redraw] = useState(0);
@@ -203,11 +208,11 @@ function Canvas({ g, sel, onSelect, onMove }: { g: Graph; sel: string | null; on
             style={{ left: n.x, top: n.y, width: W, height: H }}>
             <span className="flex w-full items-center justify-between gap-2">
               <span className="text-[13px] font-bold">{kindName(n.kind)}</span>
-              {OUTPUTS.includes(n.kind) && (live(n.kind)
+              {OUTPUTS.includes(n.kind) && (live(n.kind, host)
                 ? <span className="rounded-full bg-ok-bg px-1.5 text-[11px] text-ok">{t("可用", "Live")}</span>
                 : <span className="rounded-full bg-muted px-1.5 text-[11px] text-muted-foreground">{t("即將推出", "Coming")}</span>)}
             </span>
-            <span className="w-full truncate text-xs text-muted-foreground">{sub(n)}</span>
+            <span className="w-full truncate text-xs text-muted-foreground">{sub(n, host)}</span>
           </button>
         ))}
       </div>
@@ -215,8 +220,8 @@ function Canvas({ g, sel, onSelect, onMove }: { g: Graph; sel: string | null; on
   );
 }
 
-function Inspector({ g, node, secret, onPatch, onRemove, onAutoSend }: {
-  g: Graph; node: Node | null; secret: string; onPatch: (id: string, p: Partial<Node>) => void; onRemove: (id: string) => void; onAutoSend: (v: boolean) => void;
+function Inspector({ g, host, node, secret, onPatch, onRemove, onAutoSend }: {
+  g: Graph; host: Host; node: Node | null; secret: string; onPatch: (id: string, p: Partial<Node>) => void; onRemove: (id: string) => void; onAutoSend: (v: boolean) => void;
 }) {
   const field = "mb-3 block text-sm";
   return (
@@ -231,7 +236,7 @@ function Inspector({ g, node, secret, onPatch, onRemove, onAutoSend }: {
         <>
           <div className="mb-3 flex items-center justify-between gap-2">
             <h3 className="text-base font-bold">{kindName(node.kind)}</h3>
-            {OUTPUTS.includes(node.kind) && !live(node.kind) && <Badge variant="secondary" className="rounded-full">{t("即將推出", "Coming soon")}</Badge>}
+            {OUTPUTS.includes(node.kind) && !live(node.kind, host) && <Badge variant="secondary" className="rounded-full">{t("這個伺服器沒有設定寄信", "No mail set up on this server")}</Badge>}
           </div>
           {node.kind === "branch" && <p className="text-sm">{node.sender === OTHER ? t("沒有自己分支的廠商都走這裡。", "Senders without their own branch go here.") : t(`寄件公司是 ${node.sender} 的文件走這條。`, `Documents from ${node.sender} go this way.`)}</p>}
           {node.kind === "webhook" && (
@@ -247,13 +252,18 @@ function Inspector({ g, node, secret, onPatch, onRemove, onAutoSend }: {
               <p className="mb-3 text-[13px]">{t("簽章密鑰：", "Signing secret: ")}<code className="break-all select-all">{secret}</code></p>
             </>
           )}
-          {node.kind === "email" && <label className={field}>{t("收件人", "Recipient")}<Input value={node.to ?? ""} placeholder="ops@example.com" onChange={(e) => onPatch(node.id, { to: e.target.value })} /></label>}
+          {node.kind === "email" && (
+            <>
+              <label className={field}>{t("收件人", "Recipient")}<Input type="email" value={node.to ?? ""} placeholder="ops@example.com" onChange={(e) => onPatch(node.id, { to: e.target.value })} /></label>
+              <p className="mb-3 text-[13px] text-muted-foreground">{t("確認後寄一封信：主旨是文件名稱，附件是完整資料（JSON）和明細（CSV）。事後改過再確認的會再寄一次。", "On approval one email goes out: the document name as subject, the full record (JSON) and line items (CSV) attached. A document corrected and approved again is sent again.")}</p>
+            </>
+          )}
           {node.kind === "download" && <p className="text-sm">{t("確認後在文件頁下載 JSON 或 CSV，或複製下載網址。", "After approval, download JSON or CSV on the document page, or copy the download URL.")}</p>}
-          {!OUTPUTS.includes(node.kind) && node.kind !== "branch" && <p className="text-sm text-muted-foreground">{sub(node)}</p>}
+          {!OUTPUTS.includes(node.kind) && node.kind !== "branch" && <p className="text-sm text-muted-foreground">{sub(node, host)}</p>}
           {OUTPUTS.includes(node.kind) && (
             <>
               <h4 className="mt-2 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h4>
-              <p className="mb-3 text-[13px] text-muted-foreground">{node.kind === "download" ? t("下載不留紀錄。", "Downloads are not logged.") : node.kind === "webhook" ? t("每份文件送出的狀態碼和收據編號，列在那份文件的頁面上。", "Each document's status codes and receipt ids are listed on its page.") : t("上線後這裡列出每次寄出。", "Once live, every email sent shows here.")}</p>
+              <p className="mb-3 text-[13px] text-muted-foreground">{node.kind === "download" ? t("下載不留紀錄。", "Downloads are not logged.") : node.kind === "webhook" ? t("每份文件送出的狀態碼和收據編號，列在那份文件的頁面上。", "Each document's status codes and receipt ids are listed on its page.") : t("每份文件寄出的紀錄，列在那份文件的頁面上。", "Each document's sends are listed on its page.")}</p>
               <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>
             </>
           )}

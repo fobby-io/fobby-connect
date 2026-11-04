@@ -47,7 +47,7 @@ Everything in this repository was written between 2026-10-27 and 2026-11-04 (see
 | Prompt hierarchy (fallback, document class, sender) and learning from corrections with replay validation | `src/profiles/` |
 | Normalization to typed values with raw text kept | `src/normalize/`, `src/transforms/`, `src/reference/` |
 | Checks across rows, totals, pages and containers | `src/rules/` |
-| Review API for Node and Cloudflare Workers | `src/server/` |
+| Review API for any JS host (Node server included) | `src/server/` |
 | Review screen (React, shadcn/ui, pdf.js) | `web/` |
 | Synthetic document generator, evaluation and samples | `eval/`, `scripts/` |
 
@@ -55,4 +55,4 @@ Sample and test documents are synthetic: invented companies, numbers and product
 
 ## Licence
 
-AGPL-3.0. The hosted version at connect.fobby.io runs this code on Cloudflare Workers.
+AGPL-3.0. The hosted version at connect.fobby.io runs this code.

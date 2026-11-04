@@ -180,6 +180,12 @@ export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
   if (d.status === "approved") return <Badge variant="secondary" className="rounded-full">{t("已確認", "Approved")}</Badge>;
   return <Badge className="rounded-full bg-warn-bg text-warn">{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
 };
+/** Who emailed this document in, and the subject line; nothing for an upload. */
+export function ViaEmail({ doc }: { doc: Doc }) {
+  if (doc.source?.via !== "email") return null;
+  return <p className="text-[13px] text-muted-foreground">{t(`由 ${doc.source.from} 寄來`, `Emailed by ${doc.source.from}`)}{doc.source.subject && t(`：「${doc.source.subject}」`, `: "${doc.source.subject}"`)}</p>;
+}
+
 export const when = (iso: string) => (iso ? new Date(iso).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 
 function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: Doc) => void }) {
@@ -278,7 +284,7 @@ function Export({ doc }: { doc: Doc }) {
           <Button asChild><a href={`${base}.json`} download>{t("完整資料（JSON）", "Full record (JSON)")}</a></Button>
           <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("Excel 表格（只有明細，CSV）", "Excel table (line items only, CSV)")}</a></Button>
           <Button variant="outline" onClick={copyUrl}>{t("複製下載網址", "Copy download URL")}</Button>
-          <Button variant="outline" disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("送到 Webhook", "Send to webhooks")}</Button>
+          <Button variant="outline" disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("送到 Webhook／Email", "Send to webhooks and email")}</Button>
           <span role="status" className="text-sm text-muted-foreground">
             {copy === "done" && t("已複製", "Copied")}
             {copy === "failed" && <>{t("無法自動複製，請手動複製：", "Could not copy; copy it by hand: ")}<code className="select-all break-all">{url}</code></>}
@@ -290,7 +296,7 @@ function Export({ doc }: { doc: Doc }) {
       )}
       {deliveries.length > 0 && (
         <>
-          <h4 className="mt-4 mb-1 text-sm font-bold">{t("Webhook 送出紀錄", "Webhook deliveries")}</h4>
+          <h4 className="mt-4 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h4>
           <ul className="list-none p-0">{deliveries.map((d) => <DeliveryRow key={d.id} d={d} />)}</ul>
         </>
       )}
@@ -374,6 +380,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
             </div>
             <h2 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${a.sender} 的${docType}`, `${docType} from ${a.sender}`)}</h2>
             <p className="text-muted-foreground">{doc.name}</p>
+            <ViaEmail doc={doc} />
           </div>
           <div className="flex flex-wrap gap-2.5">
             {([[n.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("gw_kg"), t("毛重 kg", "gross kg")], [v?.checked ?? 0, t("核對過的值", "values checked")]] as const).map(([x, label]) => (

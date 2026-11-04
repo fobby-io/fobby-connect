@@ -4,7 +4,9 @@ import { MetaError, type MetaClient } from "../src/gateway/meta-client.ts";
 import type { Page } from "../src/profiles/loop.ts";
 import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 
-// The Worker has no file system: loading the app must not touch node:fs.
+import type { Mail } from "../src/server/app.ts";
+
+// Hosts without a file system serve the app too: loading it must not touch node:fs.
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
 const { createApp } = await import("../src/server/app.ts");
 
@@ -16,10 +18,10 @@ const PAGE: Page = {
   groups: [], totals: { ...(nulls(TOTALS_KEYS) as Page["totals"]), total_pkgs: { v: "50", box: [0, 0, 1, 1] } }, remarks: [],
 };
 
-function setup(client: MetaClient) {
+function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>) {
   const store = new Map<string, Uint8Array>();
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  return { store, app: createApp({ files, client }) };
+  return { store, app: createApp({ files, client, mail }) };
 }
 const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
@@ -145,5 +147,55 @@ describe("createApp", () => {
     const r = await call(app, "/api/documents/nope");
     expect(r.status).toBe(404);
     expect((await r.json()).error.code).toBe("not_found");
+  });
+});
+
+describe("email", () => {
+  const b64 = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/.{76}/g, "$&\r\n");
+  const part = (type: string, filename: string, bytes: Uint8Array) =>
+    `--b\r\nContent-Type: ${type}\r\nContent-Disposition: attachment; filename="${filename}"\r\nContent-Transfer-Encoding: base64\r\n\r\n${b64(bytes)}\r\n`;
+  const mime = async () => new TextEncoder().encode(
+    "From: Sales <sales@acme.test>\r\nTo: in@connect.test\r\nSubject: PL 1234\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n"
+    + "--b\r\nContent-Type: text/plain\r\n\r\nPlease see attached.\r\n"
+    + part("application/pdf", "pl-1234.pdf", await pdf())
+    + part("application/octet-stream", "fake.pdf", new TextEncoder().encode("hello"))
+    + part("image/png", "logo.png", new Uint8Array([137, 80, 78, 71]))
+    + "--b--\r\n");
+
+  it("reads each attached PDF like an upload, lists one that is not a PDF with its error, and skips other files", async () => {
+    const { app } = setup(reads());
+    const r = await app.receiveEmail(await mime(), "sales@acme.test");
+    expect(r.subject).toBe("PL 1234");
+    expect(r.documents).toEqual([{ name: "pl-1234.pdf", id: expect.any(String) }, { name: "fake.pdf", error: "not a PDF" }]);
+    const doc = await (await call(app, `/api/documents/${r.documents[0]!.id}`)).json();
+    expect(doc.name).toBe("pl-1234.pdf");
+    expect(doc.source).toEqual({ via: "email", from: "sales@acme.test", subject: "PL 1234" });
+    expect((await (await call(app, "/api/documents")).json())).toHaveLength(1);
+  });
+
+  it("emails the approved record to the branch's recipients with JSON and CSV attached, and records each send", async () => {
+    let fail = false;
+    const sent: Mail[] = [];
+    const { app, store } = setup(reads(), async (m) => { if (fail) throw new Error("E_RATE_LIMIT_EXCEEDED"); sent.push(m); return { id: `msg-${sent.length}` }; });
+    expect((await (await call(app, "/api/flow")).json()).mail).toBe(true);
+    const graph = {
+      autoSend: true, edges: [["b", "e1"], ["b", "e2"], ["b", "e3"]],
+      nodes: [{ id: "b", kind: "branch", sender: "*", x: 0, y: 0 }, { id: "e1", kind: "email", to: "Ops@Acme.test", x: 0, y: 0 }, { id: "e2", kind: "email", to: "ops@acme.test", x: 0, y: 0 }, { id: "e3", kind: "email", to: "not an address", x: 0, y: 0 }],
+    };
+    expect((await call(app, "/api/flow", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ graph }) })).status).toBe(200);
+    const doc = await (await call(app, "/api/documents?name=a.pdf", { method: "POST", body: await pdf() })).json();
+    await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
+
+    expect(sent.map((m) => m.to)).toEqual(["ops@acme.test"]);
+    expect(sent[0]!.attachments.map((a) => a.filename)).toEqual([`${doc.id}.json`, `${doc.id}.csv`]);
+    expect(JSON.parse(sent[0]!.attachments[0]!.content)).toMatchObject({ id: doc.id, sender: "ACME" });
+    const ds = (await (await call(app, `/api/documents/${doc.id}`)).json()).deliveries;
+    expect(ds).toMatchObject([{ url: "mailto:ops@acme.test", ok: true, receipt: "msg-1", event: "document.approved", next_at: null }]);
+
+    // A failed send is recorded with the host's error and is not queued for retry.
+    fail = true;
+    const again = await (await call(app, `/api/documents/${doc.id}/send`, { method: "POST" })).json();
+    expect(again.deliveries[0]).toMatchObject({ ok: false, error: "E_RATE_LIMIT_EXCEEDED", event: "document.corrected", next_at: null });
+    expect([...store.keys()].some((k) => k.includes("/retries/"))).toBe(false);
   });
 });

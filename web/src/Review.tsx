@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { creditText, errorMessage, isCreditExhausted, PASS, post, reasonText, request, WRONG, type Doc, type NormDoc } from "./api.ts";
-import { Busy, ErrorText, Samples } from "./App.tsx";
+import { Busy, ErrorText, Samples, ViaEmail } from "./App.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -139,6 +139,7 @@ export function Review({ doc, onApproved, onOpen }: {
           <div className="flex-[1_1_320px]">
             <h2 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${issuer} 的${L.DOC_TYPE[run.cls ?? ""] ?? "文件"}`, `${L.DOC_TYPE[run.cls ?? ""] ?? "Document"} from ${issuer}`)}</h2>
             <p className="text-muted-foreground">{t(`共 ${run.pages.length} 頁。`, `${run.pages.length} page${run.pages.length === 1 ? "" : "s"}. `)}{sourceLine}</p>
+            <ViaEmail doc={doc} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <label htmlFor="sender" className="text-sm font-semibold">{t("寄件公司", "Sender")}</label>
               <Input id="sender" ref={senderInput} className="w-auto min-w-[240px]" value={sender} onChange={(e) => setSender(e.target.value)} />

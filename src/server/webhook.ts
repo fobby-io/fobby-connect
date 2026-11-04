@@ -21,14 +21,25 @@ export type Delivery = {
 
 export const OTHER = "*";
 
-/** The webhooks under this sender's branch, or under "every other sender" when it has none. Empty URLs are skipped. */
-export function targets(g: Graph | null, sender: string): { name: string; url: string }[] {
+/** The output nodes under this sender's branch, or under "every other sender" when it has none. */
+function outputs(g: Graph | null, sender: string) {
   if (!g) return [];
   const branch = g.nodes.find((n) => n.kind === "branch" && n.sender?.toUpperCase() === sender.toUpperCase())
     ?? g.nodes.find((n) => n.kind === "branch" && n.sender === OTHER);
   if (!branch) return [];
   const outs = new Set(g.edges.filter(([f]) => f === branch.id).map(([, to]) => to));
-  return g.nodes.filter((n) => outs.has(n.id) && n.kind === "webhook" && n.url?.trim()).map((n) => ({ name: n.name ?? "Webhook", url: n.url!.trim() }));
+  return g.nodes.filter((n) => outs.has(n.id));
+}
+
+/** The webhooks of this sender's branch. Empty URLs are skipped. */
+export function targets(g: Graph | null, sender: string): { name: string; url: string }[] {
+  return outputs(g, sender).filter((n) => n.kind === "webhook" && n.url?.trim()).map((n) => ({ name: n.name ?? "Webhook", url: n.url!.trim() }));
+}
+
+export const isAddress = (s: string) => /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(s);
+/** The email recipients of this sender's branch, each once. Empty or malformed addresses are skipped. */
+export function recipients(g: Graph | null, sender: string): string[] {
+  return [...new Set(outputs(g, sender).filter((n) => n.kind === "email").map((n) => n.to?.trim().toLowerCase() ?? "").filter(isAddress))];
 }
 
 /** https only and no local or private address: the server sends, so a URL must not reach inside its own network. */

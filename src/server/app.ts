@@ -1,5 +1,6 @@
-// The review API for both hosts: the local Node server (src/server/local.ts) and the cloud Worker (private repo).
-// No Node built-ins here: files and the Meta client come in as deps.
+// The review API. src/server/local.ts serves it with Node; any other host serves it the same way.
+// No Node built-ins here: files, the Meta client and sending email come in as deps.
+import PostalMime from "postal-mime";
 import { CreditExhausted, creditGuard } from "../gateway/credit.ts";
 import { gateway } from "../gateway/gateway.ts";
 import { memoryLedger } from "../gateway/ledger.ts";
@@ -13,19 +14,25 @@ import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
 import { schemas } from "../shared/model-output.ts";
 import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts";
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
-import { deliver, Graph, newSecret, targets, type Delivery, type Flow } from "./webhook.ts";
+import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
 /** Keys: runs/<id>.pdf|json, space.json, <space>/index/<id>.json, <space>/holds/<sender>.json, profiles.json, flow.json, samples/index.json, samples/<id>.pdf|json; runs/index.json and senders.json are read from older data only. */
 /** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]>; delete(key: string): Promise<void> };
-/** decide is the second system (Jev); without it nothing is verified and every document goes to a person. */
-export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide };
+/** One email the host sends for an email output of the flow. Throws when the host refuses or fails to send it. */
+export type Mail = { to: string; subject: string; text: string; attachments: { filename: string; type: string; content: string }[] };
+/**
+ * decide is the second system (Jev); without it nothing is verified and every document goes to a person. mail sends the
+ * flow's email outputs; without it they are not sent. intakeAddress is the address whose mail the host passes to
+ * receiveEmail, shown on the flow screen.
+ */
+export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string };
 /** Why a document was not approved automatically; empty when it was. */
 export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged" | "findings" | "layout_changed" | "reopened";
 // approved.answer and approved_at are missing on documents approved before export existed.
 export type Saved = {
   id: string; name: string; run: RunResult; pages: PageInput[]; created_at?: string; verify?: Verification;
-  auto?: { ok: boolean; reasons: AutoReason[] }; deliveries?: Delivery[];
+  auto?: { ok: boolean; reasons: AutoReason[] }; deliveries?: Delivery[]; source?: { via: "email"; from: string; subject: string };
   approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string };
 };
 export type Sample = { id: string; name: string; sender: string };
@@ -37,6 +44,8 @@ type SenderState = Record<string, { hold?: boolean }>;
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
 const MAX_PAGES = 20;
+// Every attached PDF is a paid read: one email reads at most this many.
+const MAX_ATTACHMENTS = 5;
 const enc = new TextEncoder(), dec = new TextDecoder();
 const toJson = (x: unknown) => enc.encode(JSON.stringify(x));
 const fail = (status: number, code: string, message: string) => Object.assign(new Error(message), { status, code });
@@ -82,7 +91,7 @@ export function createApp(deps: Deps) {
     await files.put(`${await space()}/index/${d.id}.json`, toJson(listed(d)));
   };
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
-  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
+  const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
 
   // Profiles live in one JSON: read per request, written back only when the request changed them.
@@ -126,10 +135,33 @@ export function createApp(deps: Deps) {
     await files.put("flow.json", toJson(made));
     return made;
   };
-  // An approved document goes to every webhook of its sender's branch; a document sent before and approved again is a correction.
+  // One email with the record attached as JSON and CSV. Not retried: the host's mail service queues and retries itself.
+  async function mailTo(d: Saved, to: string, event: string): Promise<Delivery> {
+    const x = d as Exportable, t0 = Date.now();
+    const base = { id: `dlv_${crypto.randomUUID().slice(0, 12)}`, event, name: "Email", url: `mailto:${to}`, at: new Date().toISOString(), status: null, attempt: 1, next_at: null };
+    const what = event === "document.corrected" ? "corrected / 已更正" : "approved / 已確認";
+    try {
+      const r = await deps.mail!({
+        to, subject: `${d.name}: ${what}`,
+        text: [`${d.name} (${d.approved!.sender}) ${what}, ${d.approved!.approved_at}.`, "The full record is attached as JSON and CSV. 完整資料在附件的 JSON 和 CSV。", "", "Fobby Connect"].join("\n"),
+        attachments: [
+          { filename: `${d.id}.json`, type: "application/json", content: JSON.stringify(exportJson(x), null, 2) },
+          { filename: `${d.id}.csv`, type: "text/csv", content: exportCsv(x) },
+        ],
+      });
+      return { ...base, ok: true, receipt: r.id ?? null, ms: Date.now() - t0 };
+    } catch (e) {
+      return { ...base, ok: false, receipt: null, ms: Date.now() - t0, error: (e as Error).message.slice(0, 300) };
+    }
+  }
+  // An approved document goes to every webhook and email of its sender's branch; a document sent before and approved again is a correction.
   async function send(d: Saved, flow: Flow) {
     const event = d.deliveries?.length ? "document.corrected" : "document.approved";
-    const out = await Promise.all(targets(flow.graph, d.approved!.sender).map((t) => deliver(t, event, exportJson(d as Exportable), flow.secret)));
+    const sender = d.approved!.sender;
+    const out = await Promise.all([
+      ...targets(flow.graph, sender).map((t) => deliver(t, event, exportJson(d as Exportable), flow.secret)),
+      ...(deps.mail ? recipients(flow.graph, sender).map((to) => mailTo(d, to, event)) : []),
+    ]);
     d.deliveries = [...out, ...(d.deliveries ?? [])].slice(0, 20);
     await queue(d.id, out);
     return out;
@@ -197,6 +229,43 @@ export function createApp(deps: Deps) {
     await save(d);
   }
 
+  // A new PDF, uploaded or attached to an email: kept, read page by page, then through intake.
+  async function ingest(bytes: Uint8Array, name: string, sender: string | null, source?: Saved["source"]) {
+    const id = newId();
+    await files.put(`runs/${id}.pdf`, bytes);
+    const pages = await preparePages(bytes);
+    // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
+    if (pages.length > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${pages.length} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
+    const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender }));
+    const d: Saved = { id, name: name || id, run, pages, ...(source && { source }) };
+    await intake(d);
+    return d;
+  }
+
+  /**
+   * An email sent to the intake address. Each attached PDF (at most MAX_ATTACHMENTS) is read like an upload, one at a
+   * time; one that fails is listed with its error and the rest still go in. from is the envelope sender the host
+   * received the mail from, not the From header, which the sender can write as anything.
+   */
+  async function receiveEmail(raw: Uint8Array | ArrayBuffer, from: string) {
+    const mail = await PostalMime.parse(raw);
+    const subject = (mail.subject ?? "").slice(0, 200);
+    const pdfs = mail.attachments.filter((a) => a.mimeType === "application/pdf" || /\.pdf$/i.test(a.filename ?? "")).slice(0, MAX_ATTACHMENTS);
+    const documents: { name: string; id?: string; error?: string }[] = [];
+    for (const [i, a] of pdfs.entries()) {
+      const name = (a.filename ?? `${subject || "email"} ${i + 1}.pdf`).slice(0, 200);
+      try {
+        const bytes = new Uint8Array(a.content as ArrayBuffer);
+        if (bytes.length > MAX_UPLOAD) throw fail(413, "too_large", "file over 25 MB");
+        if (dec.decode(bytes.subarray(0, 5)) !== "%PDF-") throw fail(400, "not_pdf", "not a PDF");
+        documents.push({ name, id: (await ingest(bytes, name, null, { via: "email", from, subject })).id });
+      } catch (e) {
+        documents.push({ name, error: (e as Error).message });
+      }
+    }
+    return { from, subject, documents };
+  }
+
   async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
@@ -211,14 +280,7 @@ export function createApp(deps: Deps) {
 
     if (req.method === "POST" && path === "/api/documents") {
       const bytes = await body();
-      const id = newId();
-      await files.put(`runs/${id}.pdf`, bytes);
-      const pages = await preparePages(bytes);
-      // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
-      if (pages.length > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${pages.length} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
-      const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender: url.searchParams.get("sender") || null }));
-      const d: Saved = { id, name: url.searchParams.get("name") ?? id, run, pages };
-      await intake(d);
+      const d = await ingest(bytes, url.searchParams.get("name") ?? "", url.searchParams.get("sender") || null);
       return json(200, view(d));
     }
     if (req.method === "GET" && path === "/api/documents") return json(200, await docList());
@@ -303,7 +365,7 @@ export function createApp(deps: Deps) {
       await save(d);
       return json(200, { deliveries: d.deliveries });
     }
-    if (req.method === "GET" && path === "/api/flow") return json(200, await getFlow());
+    if (req.method === "GET" && path === "/api/flow") return json(200, { ...(await getFlow()), mail: !!deps.mail, intake: deps.intakeAddress ?? null });
     if (req.method === "PUT" && path === "/api/flow") {
       const parsed = Graph.safeParse((await bodyJson<{ graph: unknown }>()).graph);
       if (!parsed.success) throw fail(400, "bad_flow", "出口流程格式不對。");
@@ -336,7 +398,7 @@ export function createApp(deps: Deps) {
   }
 
   return {
-    retry,
+    retry, receiveEmail,
     async fetch(req: Request): Promise<Response> {
       try {
         return await handle(req);

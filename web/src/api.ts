@@ -20,6 +20,7 @@ export const PASS = 0.75, WRONG = 0.5;
 export type Doc = {
   id: string; name: string; normalized: NormDoc; approved: Approved | null; created_at: string | null;
   verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null; deliveries: Delivery[];
+  source?: { via: "email"; from: string; subject: string } | null;
   run: {
     cls: string | null; sender: string | null; issuer: string | null;
     prompt: { level: string; version: number } | null;
@@ -83,7 +84,7 @@ const MESSAGES: Record<string, [zh: string, en: string]> = {
   sender_required: ["請先填寄件公司再確認。", "Name the sender before approving."],
   not_approved: ["這份文件還沒核准，核准後才能匯出。", "This document is not approved yet; approve it to export."],
   not_found: ["找不到這份文件。", "Document not found."],
-  no_webhook: ["這家在出口流程裡沒有設定網址的 Webhook。", "This sender has no webhook with a URL in the export flow."],
+  no_webhook: ["這家在出口流程裡沒有設定網址的 Webhook，也沒有設定收件人的 Email。", "This sender has no webhook with a URL and no email with a recipient in the export flow."],
   bad_flow: ["出口流程格式不對。", "The export flow is not valid."],
 };
 export function errorMessage(e: unknown): string {
