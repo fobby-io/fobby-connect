@@ -1,12 +1,12 @@
 // One-time move of the state kept as JSON files (before the database) into a Db. Safe to run again: rows that exist
 // are kept, and counts are compared at the end. No Node built-ins, so it runs where the files are (a folder or R2).
 import { listedOf, type Files, type ListedDoc, type Saved } from "./app.ts";
-import type { Approved, PromptVersion } from "../profiles/loop.ts";
-import type { Db } from "./db.ts";
+import type { Approved, Page, PromptVersion } from "../profiles/loop.ts";
+import type { ApprovedRef, Db } from "./db.ts";
 
 export type MigrationReport = {
   space: string; apply: boolean;
-  source: { documents: number; versions: number; examples: number; usage_today: number; holds: number };
+  source: { documents: number; versions: number; examples: number; usage_today: number; holds: number; flow: boolean; retries: number };
   database: { documents: number; versions: number; examples: number } | null;
   notes: string[];
 };
@@ -51,17 +51,26 @@ export async function migrateStorage(files: Files, db: Db, o: { apply?: boolean;
     return { ...v, status: "retired" as const };
   });
   // A document approved again before reopen removed its example appears twice: the later approval is the one kept.
-  const byDoc = new Map<string, Approved>();
-  for (const a of prof.approved ?? []) {
+  const byDoc = new Map<string, ApprovedRef>();
+  for (const { pages: _, ...a } of prof.approved ?? []) {
     if (byDoc.delete(a.doc_id)) notes.push(`example ${a.doc_id} was approved more than once: the latest is kept`);
     byDoc.set(a.doc_id, a);
   }
+  // Examples kept one file each (examples/<doc_id>.json) carry no sender or kind: the document's read result has them.
+  for (const k of await files.list("examples/")) {
+    const id = k.match(/^examples\/([\w-]+)\.json$/)?.[1];
+    const x = id ? await getJson<{ answer: Page[]; model: Page[] }>(k) : null;
+    const d = id ? await getJson<Saved>(`runs/${id}.json`) : null;
+    if (!id || !x) continue;
+    if (!d?.approved) { notes.push(`example ${id} has no approved document: left out`); continue; }
+    byDoc.delete(id);
+    byDoc.set(id, { doc_id: id, sender: d.approved.sender, cls: d.run.cls ?? "PL", answer: x.answer, model: x.model });
+  }
   const examples = [...byDoc.values()];
   if (apply) {
-    for (const a of examples) await files.put(`examples/${a.doc_id}.json`, enc.encode(JSON.stringify({ pages: a.pages, answer: a.answer, model: a.model })));
     // Active versions go last, so a key never has two at once on the way in.
     const put = [...fixed.filter((v) => v.status !== "active"), ...fixed.filter((v) => v.status === "active")];
-    await db.saveProfiles(space, { put, added: examples.map((a) => ({ doc_id: a.doc_id, sender: a.sender, cls: a.cls, key: `examples/${a.doc_id}.json` })), removed: [] });
+    await db.saveProfiles(space, { put, added: examples, removed: [] });
   }
 
   // Today's paid actions, so moving does not refill the day. spend() counts up to the cap and no further, so a second
@@ -70,17 +79,23 @@ export async function migrateStorage(files: Files, db: Db, o: { apply?: boolean;
   const used = (await files.list(`usage/${today}/`)).length;
   if (apply) for (let i = 0; i < used; i++) await db.spend(today, used);
 
-  // Holds from the single senders.json become one entry per sender, as the app writes them; a newer entry is kept.
-  const holds = Object.entries((await getJson<Record<string, { hold?: boolean }>>("senders.json")) ?? {}).filter(([, h]) => h.hold).map(([s]) => s);
-  if (apply) for (const s of holds) {
-    const key = `${space}/holds/${encodeURIComponent(s)}.json`;
-    if (!(await files.get(key))) await files.put(key, enc.encode(JSON.stringify({ sender: s, hold: true })));
-  }
+  // Holds: the single senders.json, then one file per sender under <space>/holds/, which is newer and wins.
+  const hold = new Map<string, boolean>();
+  for (const [s, h] of Object.entries((await getJson<Record<string, { hold?: boolean }>>("senders.json")) ?? {})) hold.set(s, !!h.hold);
+  for (const k of await files.list(`${space}/holds/`)) { const h = await getJson<{ sender: string; hold: boolean }>(k); if (h) hold.set(h.sender, h.hold); }
+  const holds = [...hold.values()].filter(Boolean).length;
+  if (apply) for (const [s, h] of hold) await db.setHold(space, s, h);
+
+  // The export flow (one flow.json) and failed deliveries waiting for a retry.
+  const flow = await getJson<unknown>("flow.json");
+  if (apply && flow) await db.putFlow(space, flow, true);
+  const waiting = (await Promise.all((await files.list(`${space}/retries/`)).map((k) => getJson<{ doc_id: string; delivery: string; due: string }>(k)))).filter((x) => !!x);
+  if (apply) for (const p of waiting) await db.queueRetry(space, { delivery_id: p!.delivery, doc_id: p!.doc_id, due: p!.due });
 
   const after = apply ? await db.loadProfiles(space) : null;
   return {
     space, apply,
-    source: { documents, versions: versions.length, examples: examples.length, usage_today: used, holds: holds.length },
+    source: { documents, versions: versions.length, examples: examples.length, usage_today: used, holds, flow: !!flow, retries: waiting.length },
     database: after && { documents: (await db.listDocs(space)).length, versions: after.versions.length, examples: after.approved.length },
     notes,
   };

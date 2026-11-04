@@ -16,8 +16,8 @@ describe("database storage", () => {
   it("keeps both changes when two senders' profiles are saved at once", async () => {
     const db = await pgliteDb();
     await Promise.all([
-      db.saveProfiles("s0", { put: [version("A/PL", 1, "active")], added: [{ doc_id: "a1", sender: "A", cls: "PL", key: "examples/a1.json" }], removed: [] }),
-      db.saveProfiles("s0", { put: [version("B/PL", 1, "active")], added: [{ doc_id: "b1", sender: "B", cls: "PL", key: "examples/b1.json" }], removed: [] }),
+      db.saveProfiles("s0", { put: [version("A/PL", 1, "active")], added: [{ doc_id: "a1", sender: "A", cls: "PL", answer: [], model: [] }], removed: [] }),
+      db.saveProfiles("s0", { put: [version("B/PL", 1, "active")], added: [{ doc_id: "b1", sender: "B", cls: "PL", answer: [], model: [] }], removed: [] }),
     ]);
     const p = await db.loadProfiles("s0");
     expect(p.versions.map((v) => v.key).sort()).toEqual(["A/PL", "B/PL"]);

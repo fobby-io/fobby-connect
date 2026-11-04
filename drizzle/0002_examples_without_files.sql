@@ -1,0 +1,1 @@
+ALTER TABLE "approved_examples" DROP COLUMN "key";

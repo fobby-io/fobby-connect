@@ -18,7 +18,7 @@ import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
-/** Keys: runs/<id>.pdf|json, examples/<doc_id>.json, prompts/<hash>.json, space.json, <space>/holds/<sender>.json, flow.json. The rest lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
+/** Files keep documents only: runs/<id>.pdf|json (the PDF and its read result), prompts/<hash>.json (each request sent) and space.json. Data lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
 /** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]>; delete(key: string): Promise<void> };
 /** One email the host sends for an email output of the flow. Throws when the host refuses or fails to send it. */
@@ -93,8 +93,6 @@ export function createApp(deps: Deps) {
   // name there. Requests never write it, so requests at once always agree on it.
   const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
   const g = gateway(client, dbLedger(db, space), (k, b) => files.put(k, b));
-  const entries = async <T>(prefix: string) =>
-    (await Promise.all((await files.list(prefix)).map((k) => getJson<T>(k)))).filter((x): x is Awaited<T> & {} => x != null);
   const docList = async (): Promise<ListedDoc[]> => {
     const own: ListedDoc[] = (await db.listDocs(await space())).map(({ id, name, sender, cls, status, created_at, flagged, reopened }) => ({ id, name, sender, cls, status, created_at, flagged, reopened }));
     return own.sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -119,20 +117,19 @@ export function createApp(deps: Deps) {
   async function withStore<T>(f: (s: Store) => Promise<T>, again = true): Promise<T> {
     const sp = await space();
     const { versions, approved: refs } = await db.loadProfiles(sp);
+    // An example's answer is in the database; its pages are the document's own, read from its read result.
     // shortcut: every example of the space is read per request; load per sender once spaces grow.
-    const approved = await Promise.all(refs.map(async (r) => ({ ...(await getJson<Omit<Approved, "doc_id" | "sender" | "cls">>(r.key))!, doc_id: r.doc_id, sender: r.sender, cls: r.cls })));
+    const approved = (await Promise.all(refs.map(async (r) => {
+      const d = await getJson<Saved>(`runs/${r.doc_id}.json`);
+      return d ? [{ ...r, pages: d.pages.map((p) => p.content) } as Approved] : [];
+    }))).flat();
     const m = memoryStore({ versions, approved });
     const put: PromptVersion[] = [], added: Approved[] = [];
     const s: Store = { ...m, put: (v) => { put.push(v); m.put(v); }, addApproved: (a) => { added.push(a); m.addApproved(a); } };
     seed(s);
     const r = await f(s);
     if (!put.length && !added.length) return r;
-    const refsAdded: ApprovedRef[] = [];
-    for (const a of added) {
-      const key = `examples/${a.doc_id}.json`;
-      await files.put(key, toJson({ pages: a.pages, answer: a.answer, model: a.model }));
-      refsAdded.push({ doc_id: a.doc_id, sender: a.sender, cls: a.cls, key });
-    }
+    const refsAdded: ApprovedRef[] = added.map(({ pages: _, ...a }) => a);
     try {
       await db.saveProfiles(sp, { put, added: refsAdded, removed: [] });
     } catch (e) {
@@ -142,13 +139,11 @@ export function createApp(deps: Deps) {
     return r;
   }
 
-  const senderState = async (): Promise<SenderState> => {
-    const own = await entries<{ sender: string; hold: boolean }>(`${await space()}/holds/`);
-    return Object.fromEntries(own.map((h) => [h.sender, { hold: h.hold }]));
-  };
+  const senderState = async (): Promise<SenderState> =>
+    Object.fromEntries(Object.entries(await db.holds(await space())).map(([s, hold]) => [s, { hold }]));
   const setHold = async (sender: string, hold: boolean) => {
     if (!!(await senderState())[sender]?.hold === hold) return;
-    await files.put(`${await space()}/holds/${encodeURIComponent(sender)}.json`, toJson({ sender, hold }));
+    await db.setHold(await space(), sender, hold);
   };
   const layoutKey = (pages: Page[]) => [...new Set(pages.flatMap((p) => p.columns.map((c) => `${c.field}=${c.label.replace(/\s+/g, " ").trim().toUpperCase()}`)))].sort().join("|");
 
@@ -175,12 +170,13 @@ export function createApp(deps: Deps) {
   }
 
   // The flow's signing secret is made on first use and kept with the flow.
+  // Two first requests at once keep one secret: the later insert is dropped and both read the saved flow.
   const getFlow = async (): Promise<Flow> => {
-    const f = await getJson<Flow>("flow.json");
+    const sp = await space();
+    const f = (await db.getFlow(sp)) as Flow | null;
     if (f?.secret) return f;
-    const made = { graph: f?.graph ?? null, secret: newSecret() };
-    await files.put("flow.json", toJson(made));
-    return made;
+    await db.putFlow(sp, { graph: null, secret: newSecret() } satisfies Flow, true);
+    return (await db.getFlow(sp)) as Flow;
   };
   // One email with the record attached as JSON and CSV. Not retried: the host's mail service queues and retries itself.
   async function mailTo(d: Saved, to: string, event: string): Promise<Delivery> {
@@ -213,26 +209,26 @@ export function createApp(deps: Deps) {
     await queue(d.id, out);
     return out;
   }
-  // A failed delivery waits in <space>/retries/ until its next_at; retry() picks it up.
-  type Pending = { doc_id: string; delivery: string; due: string };
+  // A failed delivery waits in the retries table until its next_at; retry() picks it up.
   const queue = async (docId: string, ds: Delivery[]) => {
-    const dir = `${await space()}/retries/`;
+    const sp = await space();
     for (const x of ds) {
-      if (x.next_at) await files.put(`${dir}${x.id}.json`, toJson({ doc_id: docId, delivery: x.id, due: x.next_at } satisfies Pending));
-      else await files.delete(`${dir}${x.id}.json`);
+      if (x.next_at) await db.queueRetry(sp, { delivery_id: x.id, doc_id: docId, due: x.next_at });
+      else await db.dropRetry(sp, x.id);
     }
   };
 
   /** Tries again every failed delivery that is due. The host calls this on a timer, about once a minute. */
   async function retry(now = new Date()) {
-    const due = (await entries<Pending>(`${await space()}/retries/`)).filter((p) => p.due <= now.toISOString());
+    const sp = await space();
+    const due = await db.dueRetries(sp, now.toISOString());
     const flow = await getFlow();
     let sent = 0;
     for (const p of due) {
       const d = await load(p.doc_id).catch(() => null);
-      const prev = d?.deliveries?.find((x) => x.id === p.delivery);
+      const prev = d?.deliveries?.find((x) => x.id === p.delivery_id);
       // A document reopened since, or a delivery no longer on it, is not sent again.
-      if (!d?.approved?.answer || !prev) { await files.delete(`${await space()}/retries/${p.delivery}.json`); continue; }
+      if (!d?.approved?.answer || !prev) { await db.dropRetry(sp, p.delivery_id); continue; }
       const next = await deliver({ name: prev.name, url: prev.url }, prev.event, exportJson(d as Exportable), flow.secret, prev);
       d.deliveries = d.deliveries!.map((x) => (x.id === next.id ? next : x));
       await save(d);
@@ -423,7 +419,7 @@ export function createApp(deps: Deps) {
       const parsed = Graph.safeParse((await bodyJson<{ graph: unknown }>()).graph);
       if (!parsed.success) throw fail(400, "bad_flow", "出口流程格式不對。");
       const f = await getFlow();
-      await files.put("flow.json", toJson({ ...f, graph: parsed.data }));
+      await db.putFlow(await space(), { ...f, graph: parsed.data });
       return json(200, { ok: true });
     }
     // A test event to one URL from the flow screen, so a receiver can be set up before any document is approved.

@@ -1,10 +1,10 @@
-// What is queried, changed and written at once lives here; PDFs, read results and example contents stay in Files.
+// Data lives here: what is queried, changed and written at once. Files (R2 on a host) keep PDFs, read results, example contents and request bodies.
 // Plain Postgres through Drizzle only (no provider features), so the host can be any Postgres.
-import { and, desc, eq, inArray, isNull, sql, sum } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, sql, sum } from "drizzle-orm";
 import { boolean, doublePrecision, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import type { Ledger, LedgerEntry } from "../gateway/ledger.ts";
-import type { PromptVersion } from "../profiles/loop.ts";
+import type { Approved, Page, PromptVersion } from "../profiles/loop.ts";
 
 export const documents = pgTable("documents", {
   space_id: text().notNull(), id: text().notNull(),
@@ -24,7 +24,9 @@ export const promptVersions = pgTable("prompt_versions", {
 
 export const approvedExamples = pgTable("approved_examples", {
   n: integer().generatedAlwaysAsIdentity(),
-  space_id: text().notNull(), doc_id: text().notNull(), sender: text().notNull(), cls: text().notNull(), key: text().notNull(),
+  space_id: text().notNull(), doc_id: text().notNull(), sender: text().notNull(), cls: text().notNull(),
+  // The approved answer and what the model read; the pages are the document's own, in its read result.
+  answer: jsonb().notNull(), model: jsonb().notNull(),
 }, (t) => [primaryKey({ columns: [t.space_id, t.doc_id] })]);
 
 // One row per UTC day for every space: a reset must not refill the day.
@@ -37,12 +39,27 @@ export const modelCalls = pgTable("model_calls", {
   created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("one_call_per_attempt").on(t.step_id, t.attempt_purpose, t.attempt)]);
 
+// A sender on hold is never approved without a person (set by "this one is wrong", cleared by a clean review).
+export const holds = pgTable("holds", {
+  space_id: text().notNull(), sender: text().notNull(), hold: boolean().notNull(),
+}, (t) => [primaryKey({ columns: [t.space_id, t.sender] })]);
+
+// The export flow of a space: its graph and the secret its webhooks are signed with.
+export const flows = pgTable("flows", { space_id: text().primaryKey(), flow: jsonb().notNull() });
+
+// A failed delivery waiting for its next try.
+export const retries = pgTable("retries", {
+  space_id: text().notNull(), delivery_id: text().notNull(), doc_id: text().notNull(), due: text().notNull(),
+}, (t) => [primaryKey({ columns: [t.space_id, t.delivery_id] })]);
+
+export type RetryRow = { delivery_id: string; doc_id: string; due: string };
+
 export type DocRow = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
   created_at: string; flagged: number | null; reopened: boolean;
   approved_at: string | null; prompt_version_id: string | null; template_hash: string | null; model: string | null;
 };
-export type ApprovedRef = { doc_id: string; sender: string; cls: string; key: string };
+export type ApprovedRef = Omit<Approved, "pages">;
 export type CallRow = LedgerEntry & { doc_id: string | null };
 
 export interface Db {
@@ -62,6 +79,15 @@ export interface Db {
   spend(day: string, cap: number): Promise<boolean>;
   recordCall(space: string, c: CallRow): Promise<void>;
   totalCost(space: string): Promise<number>;
+  /** Senders with a hold row, true or false. */
+  holds(space: string): Promise<Record<string, boolean>>;
+  setHold(space: string, sender: string, hold: boolean): Promise<void>;
+  getFlow(space: string): Promise<unknown | null>;
+  /** With onlyIfMissing, a flow another request saved first is kept. */
+  putFlow(space: string, flow: unknown, onlyIfMissing?: boolean): Promise<void>;
+  queueRetry(space: string, r: RetryRow): Promise<void>;
+  dropRetry(space: string, delivery_id: string): Promise<void>;
+  dueRetries(space: string, now: string): Promise<RetryRow[]>;
 }
 
 // Any Drizzle Postgres database: node-postgres (Hyperdrive, Neon) or PGlite (tests, local without a URL).
@@ -91,7 +117,7 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
       const ap = await db.select().from(approvedExamples).where(eq(approvedExamples.space_id, space)).orderBy(approvedExamples.n);
       return {
         versions: vs.map(({ space_id: _, ...v }) => v as PromptVersion),
-        approved: ap.map((a) => ({ doc_id: a.doc_id, sender: a.sender, cls: a.cls, key: a.key })),
+        approved: ap.map((a) => ({ doc_id: a.doc_id, sender: a.sender, cls: a.cls, answer: a.answer as Page[], model: a.model as Page[] })),
       };
     },
     async saveProfiles(space, c) {
@@ -116,6 +142,31 @@ export function pgDb(db: PgDatabase<any, any, any>): Db {
     async totalCost(space) {
       const [r] = await db.select({ t: sum(modelCalls.cost_usd) }).from(modelCalls).where(eq(modelCalls.space_id, space));
       return Number(r?.t ?? 0);
+    },
+    async holds(space) {
+      const rows = await db.select({ sender: holds.sender, hold: holds.hold }).from(holds).where(eq(holds.space_id, space));
+      return Object.fromEntries(rows.map((r) => [r.sender, r.hold]));
+    },
+    async setHold(space, sender, hold) {
+      await db.insert(holds).values({ space_id: space, sender, hold }).onConflictDoUpdate({ target: [holds.space_id, holds.sender], set: { hold } });
+    },
+    async getFlow(space) {
+      const [r] = await db.select({ flow: flows.flow }).from(flows).where(eq(flows.space_id, space));
+      return r?.flow ?? null;
+    },
+    async putFlow(space, flow, onlyIfMissing = false) {
+      const q = db.insert(flows).values({ space_id: space, flow });
+      await (onlyIfMissing ? q.onConflictDoNothing() : q.onConflictDoUpdate({ target: flows.space_id, set: { flow } }));
+    },
+    async queueRetry(space, r) {
+      await db.insert(retries).values({ space_id: space, ...r }).onConflictDoUpdate({ target: [retries.space_id, retries.delivery_id], set: { doc_id: r.doc_id, due: r.due } });
+    },
+    async dropRetry(space, delivery_id) {
+      await db.delete(retries).where(and(eq(retries.space_id, space), eq(retries.delivery_id, delivery_id)));
+    },
+    async dueRetries(space, now) {
+      return await db.select({ delivery_id: retries.delivery_id, doc_id: retries.doc_id, due: retries.due }).from(retries)
+        .where(and(eq(retries.space_id, space), lte(retries.due, now)));
     },
   };
 }

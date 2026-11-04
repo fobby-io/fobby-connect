@@ -38,7 +38,7 @@ const call = (app: ReturnType<typeof createApp>, path: string, init?: RequestIni
 const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 describe("createApp", () => {
-  it("uploads, reads and approves a document, keeping the PDF and the approved example in files", async () => {
+  it("uploads, reads and approves a document, keeping the PDF in files and the approved example in the database", async () => {
     const c = reads();
     const { app, store } = setup(c);
     const up = await call(app, "/api/documents?name=a.pdf", { method: "POST", body: await pdf() });
@@ -50,7 +50,8 @@ describe("createApp", () => {
     const ok = await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }));
     expect(ok.status).toBe(200);
     expect((await ok.json()).corrected).toBe(0);
-    expect(store.has(`examples/${doc.id}.json`)).toBe(true);
+    expect([...store.keys()].some((k) => k.startsWith("examples/"))).toBe(false);
+    expect((await (await call(app, "/api/senders")).json())[0].approved).toEqual([{ cls: "PL", count: 1 }]);
     expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved.sender).toBe("ACME");
   });
 
@@ -244,6 +245,6 @@ describe("email", () => {
     fail = true;
     const again = await (await call(app, `/api/documents/${doc.id}/send`, { method: "POST" })).json();
     expect(again.deliveries[0]).toMatchObject({ ok: false, error: "E_RATE_LIMIT_EXCEEDED", event: "document.corrected", next_at: null });
-    expect([...store.keys()].some((k) => k.includes("/retries/"))).toBe(false);
+    expect(await app.retry(new Date(Date.now() + 30 * 86_400_000))).toEqual({ due: 0, sent: 0 });
   });
 });

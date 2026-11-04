@@ -8,6 +8,20 @@
       "when": 1793806350414,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793811613140,
+      "tag": "0001_data_in_db",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793811622916,
+      "tag": "0002_examples_without_files",
+      "breakpoints": true
     }
   ]
 }

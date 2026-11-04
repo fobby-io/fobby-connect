@@ -36,7 +36,7 @@ npx -y pnpm@12.16.1 build:web
 npx tsx src/server/local.ts      # http://localhost:8787
 ```
 
-Documents, reading versions, approved examples, the daily limit and every model call are kept in Postgres; PDFs and read results are files under `DATA_DIR`. Without `DATABASE_URL` in `.dev.vars` the server runs an embedded Postgres (PGlite) in `data/pg`; with it (a direct connection URL) it uses that database. Either way the schema is applied on start; for another host, `npx tsx scripts/migrate.ts` applies it. Data kept as JSON files by an earlier version moves in with `npx tsx scripts/migrate-storage.ts` (add `--apply` to write; safe to run again).
+Data is kept in Postgres: documents, reading versions, approved examples, senders on hold, the export flow, deliveries waiting for a retry, the daily limit and every model call. Files under `DATA_DIR` (R2 on a host) hold only documents: each PDF, its read result and the request sent for each read. Without `DATABASE_URL` in `.dev.vars` the server runs an embedded Postgres (PGlite) in `data/pg`; with it (a direct connection URL) it uses that database. Either way the schema is applied on start; for another host, `npx tsx scripts/migrate.ts` applies it. Data kept as JSON files by an earlier version moves in with `npx tsx scripts/migrate-storage.ts` (add `--apply` to write; safe to run again).
 
 Tests: `npx tsc --noEmit && npx vitest run`. Sample PDFs: `npx tsx scripts/build-samples.ts`.
 

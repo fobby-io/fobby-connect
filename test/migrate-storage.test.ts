@@ -29,10 +29,12 @@ function legacyFiles() {
   put("profiles.json", {
     versions: [v(1, "active"), v(2, "active")],
     // a was approved twice (before reopen removed examples): the second, later one must win.
-    approved: ["a", "b", "a"].map((doc_id, i) => ({ doc_id, sender: "ACME", cls: "PL", pages: [[{ type: "text", text: `${doc_id}${i}` }]], answer: [], model: [] })),
+    approved: ["a", "b", "a"].map((doc_id, i) => ({ doc_id, sender: "ACME", cls: "PL", pages: [[{ type: "text", text: `${doc_id}${i}` }]], answer: [{ n: i }], model: [] })),
   });
   for (const n of [1, 2, 3]) put(`usage/${TODAY}/read-${n}.json`, {});
   put("senders.json", { ACME: { hold: true }, OTHER: { hold: false } });
+  put("flow.json", { graph: null, secret: "whsec_old" });
+  put("s0/retries/dlv_1.json", { doc_id: "a", delivery: "dlv_1", due: "2026-11-05T00:00:00Z" });
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
   return { store, files };
 }
@@ -43,7 +45,7 @@ describe("migrateStorage", () => {
     const db = await pgliteDb();
     const keys = store.size;
     const r = await migrateStorage(files, db, { today: TODAY });
-    expect(r.source).toEqual({ documents: 3, versions: 2, examples: 2, usage_today: 3, holds: 1 });
+    expect(r.source).toEqual({ documents: 3, versions: 2, examples: 2, usage_today: 3, holds: 1, flow: true, retries: 1 });
     expect(r.database).toBeNull();
     expect(r.notes.join("\n")).toMatch(/gone.*missing/);
     expect(await db.listDocs("s0")).toEqual([]);
@@ -51,11 +53,12 @@ describe("migrateStorage", () => {
   });
 
   it("moves documents, profiles and today's use, and a second run changes nothing", async () => {
-    const { store, files } = legacyFiles();
+    const { files } = legacyFiles();
     const db = await pgliteDb();
     const first = await migrateStorage(files, db, { apply: true, today: TODAY });
     expect(first.notes.join("\n")).toMatch(/example a was approved more than once/);
-    expect(new TextDecoder().decode(store.get("examples/a.json"))).toContain('"a2"');
+    expect((await db.loadProfiles("s0")).approved.find((a) => a.doc_id === "a")!.answer).toEqual([{ n: 2 }]);
+    expect(await db.dueRetries("s0", "2026-11-06")).toEqual([{ delivery_id: "dlv_1", doc_id: "a", due: "2026-11-05T00:00:00Z" }]);
     expect((await db.loadProfiles("s0")).approved.map((a) => a.doc_id)).toEqual(["b", "a"]);
     const second = await migrateStorage(files, db, { apply: true, today: TODAY });
     expect(first.database).toEqual({ documents: 3, versions: 2, examples: 2 });
@@ -76,12 +79,13 @@ describe("migrateStorage", () => {
     const { files } = legacyFiles();
     const db = await pgliteDb();
     await migrateStorage(files, db, { apply: true, today: TODAY });
-    for (const k of ["runs/index.json", "s0/index/a.json", "profiles.json", "senders.json"]) await files.delete(k);
+    for (const k of ["runs/index.json", "s0/index/a.json", "profiles.json", "senders.json", "flow.json", "s0/retries/dlv_1.json"]) await files.delete(k);
     const noMeta: MetaClient = async () => { throw new Error("no model call expected"); };
     const app = createApp({ files, db, client: noMeta });
     const docs = await (await app.fetch(new Request("http://x/api/documents"))).json() as { id: string }[];
     expect(docs.map((d) => d.id)).toEqual(["a", "b", "c"]);
     const senders = await (await app.fetch(new Request("http://x/api/senders"))).json() as { sender: string; hold: boolean; approved: { count: number }[] }[];
     expect(senders.find((s) => s.sender === "ACME")).toMatchObject({ hold: true, approved: [{ count: 2 }] });
+    expect(await (await app.fetch(new Request("http://x/api/flow"))).json()).toMatchObject({ secret: "whsec_old" });
   });
 });
