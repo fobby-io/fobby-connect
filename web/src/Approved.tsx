@@ -111,13 +111,12 @@ export function Approved({ rec, error, onViewPdf }: { rec: ApprovedRecord | null
 
   return (
     <Card className="gap-0 p-6">
-      <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+      <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-base font-semibold">{t("確認後的資料", "Approved data")}</h2>
         <button type="button" onClick={onViewPdf} className="cursor-pointer border-0 bg-transparent p-0 text-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
           {t(`對照原始 PDF（${rec.source.pages} 頁）`, `View the PDF (${rec.source.pages} page${rec.source.pages === 1 ? "" : "s"})`)}
         </button>
       </div>
-      <p className="mb-5 text-sm text-muted-foreground">{t("送出去的就是這些。對照原始 PDF，有錯就在下面重新審核。", "This is exactly what is sent. Compare it with the PDF; if something is wrong, reopen it below.")}</p>
 
       {failed.length > 0 && (
         <div className="mb-5 rounded-xl bg-warn-bg px-4 py-3 text-sm text-warn" role="note">

@@ -35,9 +35,7 @@ export function Vendors() {
     <div className="mx-auto grid max-w-[80rem] grid-cols-[minmax(0,1fr)] gap-5">
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
-          <h1 className="mb-1 text-2xl leading-tight font-semibold tracking-[-0.3px]">{t("廠商", "Senders")}</h1>
-          <p className="max-w-[70ch] text-muted-foreground">{t("確認過一份就認得這家；之後每個值都核對通過的文件會自動確認，事後被改過一次就先暫停。",
-            "One approved document and the sender is known; after that, documents whose values all pass are approved automatically. One corrected afterwards pauses it.")}</p>
+          <h1 className="text-2xl leading-tight font-semibold tracking-[-0.3px]">{t("廠商", "Senders")}</h1>
         </div>
         {!!list?.length && (
           <dl className="m-0 flex gap-5 text-sm">
@@ -53,7 +51,6 @@ export function Vendors() {
       {list && !list.length && (
         <Card className="items-center gap-2 p-10 text-center">
           <h2 className="text-base font-semibold">{t("還沒有認得的廠商", "No senders yet")}</h2>
-          <p className="max-w-[46ch] text-sm text-muted-foreground">{t("確認一份文件後，那家寄件公司會出現在這裡，下一份就開始自動核對。", "Approve a document and its sender appears here; from its next document on, every value is checked automatically.")}</p>
           <a href="#" className="mt-2 text-sm text-primary">{t("去文件清單 →", "Go to documents →")}</a>
         </Card>
       )}
@@ -101,11 +98,11 @@ function Sender({ s }: { s: SenderInfo }) {
         <Avatar name={s.sender} big />
         <div className="min-w-0 flex-1">
           <h2 className="text-xl font-semibold tracking-[-0.2px]">{s.sender}</h2>
-          <a href="#/flow" className="text-[13px] text-primary">{t("這家的出口設定 →", "Where this sender's documents go →")}</a>
+          <a href="#/flow" className="text-[13px] text-primary">{t("出口設定 →", "Export settings →")}</a>
         </div>
         <State s={s} />
       </div>
-      {s.hold && <p className="mb-5 rounded-xl bg-warn-bg px-4 py-3 text-sm text-warn">{t("有一份自動確認的文件事後被改過。下一份人工審核完全沒改，就恢復自動確認。", "An automatically approved document was corrected afterwards. The next document that passes review unchanged turns it back on.")}</p>}
+      {s.hold && <p className="mb-5 rounded-xl bg-warn-bg px-4 py-3 text-sm text-warn">{t("自動確認的文件事後被改過，下一份審核沒改就恢復。", "Paused after a correction; resumes when a reviewed document needs no change.")}</p>}
 
       <dl className="m-0 mb-6 grid grid-cols-2 gap-y-3 border-y py-4 min-[600px]:grid-cols-4">
         {tiles.map(([n, label], i) => (
@@ -129,7 +126,7 @@ function Sender({ s }: { s: SenderInfo }) {
                 <strong className="flex-1 font-medium">{L.DOC_TYPE[cls]}</strong>
                 <span className="text-[13px] text-muted-foreground">{t(`已確認 ${count} 份`, `${count} approved`)}</span>
               </div>
-              {!vs.length && <p className="mt-2 text-[13px] text-muted-foreground">{t("一直都讀對，用通用讀法，還不需要專屬版本。", "Always read right with the general reading; no own version needed yet.")}</p>}
+              {!vs.length && <p className="mt-2 text-[13px] text-muted-foreground">{t("通用讀法", "General reading")}</p>}
               {vs.length > 0 && <ol className="m-0 mt-3 grid list-none gap-0 p-0">{vs.map((v, i) => <Version key={v.id} v={v} last={i === vs.length - 1} />)}</ol>}
             </section>
           );

@@ -61,7 +61,7 @@ export function App() {
     // The busy screen lives in the document area before the document has an id.
     shown.current = "";
     setScreen({ kind: "busy", title: t(`正在讀取 ${f.name}…`, `Reading ${f.name}…`), step: 1,
-      text: t("第一系統逐頁讀出每個欄位，每頁約 5–15 秒；讀完由第二系統逐一核對每個值。", "The first system reads every field, about 5–15 seconds a page; then the second system checks every value.") });
+      text: t("每頁約 5–15 秒。", "About 5–15 seconds a page.") });
     setRoute({ area: "doc", id: "" });
     try {
       show(await api<Doc>(`/api/documents?${new URLSearchParams({ name: f.name })}`, { method: "POST", body: f }));
@@ -293,9 +293,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
               <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-10" /></svg>
             </span>
           </span>
-          <h1 id="upload" className="mb-2 text-xl font-semibold tracking-[-0.2px]">{t("收一份裝箱單或託運單", "Receive a packing list or shipping order")}</h1>
-          <p className="mb-5 max-w-[46ch] text-sm text-muted-foreground">{t("第一系統讀出每一列，第二系統逐一核對每個值。認得的廠商、每個值都通過就自動確認；其他的只把有疑慮的地方標給你看。",
-            "The first system reads every row, the second checks every value. A known sender whose values all pass is approved without you; anything else comes to you with only the doubtful values marked.")}</p>
+          <h1 id="upload" className="mb-5 text-xl font-semibold tracking-[-0.2px]">{t("上傳裝箱單或託運單", "Upload a packing list or shipping order")}</h1>
           {/* The one filled button on this page. */}
           <Button size="lg" onClick={() => input.current?.click()}><Icon d={ICON.upload} className="" />{t("選擇 PDF", "Choose a PDF")}</Button>
           <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
@@ -307,12 +305,10 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
         {/* Only a demo host carries samples; a team's own site shows its documents and nothing else. */}
         {samples.length > 0 && (
           <Card className={panel}>
-            <div className="mb-1 flex items-center gap-2">
+            <div className="mb-3 flex items-center gap-2">
               <Icon d={ICON.spark} />
               <h2 className="text-base font-semibold">{t("範例貨件", "Sample shipments")}</h2>
             </div>
-            <p className="mb-3 text-[13px] text-muted-foreground">{t("手邊沒有 PDF？打開一份，拿到的是複本。確認之後再打開同一份，第二份就會自動確認。",
-              "No PDF at hand? Open one; you get a copy. Approve it, then open the same one again: the second is approved without a person.")}</p>
             <Samples onOpen={onOpen} given={samples} />
           </Card>
         )}
@@ -339,7 +335,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           {!list && error == null && <p className="py-6 text-muted-foreground">{t("載入中…", "Loading…")}</p>}
           {list && !shown.length && (
             <p className="border-t py-8 text-center text-muted-foreground">
-              {!list.length ? t("還沒有文件。上傳一份 PDF 就會出現在這裡。", "No documents yet. Upload a PDF and it shows up here.")
+              {!list.length ? t("還沒有文件。", "No documents yet.")
                 : filter === "review" ? t("沒有要審核的文件。", "Nothing is waiting for review.") : t("還沒有確認過的文件。", "Nothing approved yet.")}
             </p>
           )}
@@ -407,14 +403,12 @@ function Export({ doc }: { doc: Doc }) {
   return (
     <Card className="gap-0 p-6">
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold">{t("送出資料", "Export")}</h2>
-        <a href="#/flow" className="text-sm text-primary">{t("這家送到哪裡 →", "Where this sender's documents go →")}</a>
+        <h2 className="text-base font-semibold">{t("送出", "Export")}</h2>
+        <a href="#/flow" className="text-sm text-primary">{t("出口設定 →", "Export settings →")}</a>
       </div>
       {doc.approved?.approved_at ? (
         <>
-          <p className="mb-4 text-sm text-muted-foreground">{t("JSON 是完整資料（表頭、貨櫃、明細、總計，每個值都附原文）；CSV 一列一筆明細，可以直接用 Excel 打開。",
-            "JSON is the full record: header, containers, line items and totals, each value with its printed text. CSV has one line item per row, for Excel.")}</p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button disabled={sending === "busy"} onClick={sendNow}>{sending === "busy" ? t("送出中…", "Sending…") : t("現在送出", "Send now")}</Button>
             <Button asChild variant="outline"><a href={`${base}.json`} download>{t("下載 JSON", "Download JSON")}</a></Button>
             <Button asChild variant="outline"><a href={`${base}.csv`} download>{t("下載 CSV", "Download CSV")}</a></Button>
@@ -426,7 +420,7 @@ function Export({ doc }: { doc: Doc }) {
           </div>
         </>
       ) : (
-        <p className="text-muted-foreground">{t("這份在匯出功能上線前核准，沒有存下核准內容。重新上傳再核准一次即可匯出。", "This document was approved before export existed, so its approved content was not stored. Upload it again and approve it once more to export.")}</p>
+        <p className="text-muted-foreground">{t("這份是舊版核准的，要匯出請重新上傳。", "Approved before export existed; upload it again to export.")}</p>
       )}
       {deliveries.length > 0 && (
         <>
@@ -449,8 +443,6 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
   const docType = DOC_TYPE[cls] ?? t("文件", "document");
   // In an English sentence the type is a common noun.
   const kind = t(docType, docType.toLowerCase());
-  const count = info?.approved.find((x) => x.cls === cls)?.count;
-  const active = info?.versions.find((v) => v.status === "active" && v.key.endsWith(`/${cls}`));
   const approvedData = useApproved(doc.id, !!a.approved_at);
   const [pdf, setPdf] = useState(false);
   const closePdf = useCallback(() => setPdf(false), []);
@@ -471,38 +463,31 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
     const before = l.scores.current.reduce((x, y) => x + y, 0), after = l.scores.candidate.reduce((x, y) => x + y, 0);
     tone = "ok";
     title = t(`學到了：${a.sender} 的${docType}讀法更新到第 ${l.version.version} 版`, `Learned: ${a.sender}'s ${kind} reading is now version ${l.version.version}`);
+    title = t(`讀法更新到第 ${l.version.version} 版`, `Reading updated to version ${l.version.version}`);
     body = (
       <>
-        <p>{t(`你改了 ${a.corrected} 處。Muse Wonder 拿你的修正對照原文找出讀錯的原因，改寫了這家的讀法。用新讀法重讀這家已確認的 ${l.scores.candidate.length} 份文件，要改的地方從 ${before} 處降到 ${after} 處，沒有任何一份變差，所以採用。`,
-          `You corrected ${a.corrected === 1 ? "1 value" : `${a.corrected} values`}. Muse Wonder compared them with the printed page, found why they were misread and rewrote this sender's reading. Re-reading ${many(l.scores.candidate.length, "approved document")} with it, the corrections needed went from ${before} to ${after} and none got worse, so it was adopted.`)}</p>
-        {l.version.notes.length
-          ? <ul className="mt-2 list-disc pl-5">{l.version.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>
-          : <p className="mt-2">{t("這次學到的是這家的欄位排列。", "What it learned is this sender's column layout.")}</p>}
+        <p>{t(`依你的 ${a.corrected} 處修正；重讀 ${l.scores.candidate.length} 份已確認文件，要改的地方 ${before} → ${after}。`,
+          `From your ${a.corrected === 1 ? "1 correction" : `${a.corrected} corrections`}; re-read on ${many(l.scores.candidate.length, "approved document")}, corrections needed ${before} → ${after}.`)}</p>
+        {l.version.notes.length > 0 && <ul className="mt-2 list-disc pl-5">{l.version.notes.map((x, i) => <li key={i}>{x}</li>)}</ul>}
       </>
     );
-    next = t(`下一份 ${a.sender} 的${docType}會用第 ${l.version.version} 版讀，全部核對通過就自動確認。`, `The next ${kind} from ${a.sender} is read with version ${l.version.version} and approved without you if every value passes.`);
   } else if (l.outcome === "kept") {
     tone = "warn";
-    title = t("這次沒學會，改過的欄位以後固定請你確認", "Not learned this time; the corrected fields will always come to you");
-    body = <p>{t(`你改了 ${a.corrected} 處，但試了 ${l.tries} 種新讀法都沒有讀得更好，所以維持原本的讀法。這家以後這些欄位固定請人確認：${fields(l.always_review)}。`,
-      `You corrected ${a.corrected === 1 ? "1 value" : `${a.corrected} values`}, but none of ${l.tries} rewritten readings did better, so the reading stays as it was. For this sender these fields will always be reviewed by a person: ${fields(l.always_review)}.`)}</p>;
+    title = t("讀法沒有更新", "Reading not updated");
+    body = <p>{t(`這家以後固定請人確認：${fields(l.always_review)}`, `Always reviewed for this sender from now on: ${fields(l.always_review)}`)}</p>;
   } else if (auto) {
     tone = "ok";
-    title = t("沒有經過人工，自動確認", "Approved without a person");
-    body = <p>{t(`四個條件都成立：認得的廠商、欄位跟上一份一樣、第二系統核對 ${v?.checked ?? 0} 個值全部通過、自動檢查全部通過。`,
-      `All four conditions held: a known sender, the same columns as last time, all ${v?.checked ?? 0} values passed the second check, and every rule passed.`)}</p>;
+    title = t("自動確認", "Approved automatically");
+    body = <p>{t(`${v?.checked ?? 0} 個值全部核對通過。`, `All ${v?.checked ?? 0} values passed the check.`)}</p>;
   } else {
     // Approved as read: nothing happened worth a card, only what it means for the next document.
     title = "";
     body = null;
   }
-  const later = t("下一份會自動逐一核對每個值，全部通過就不用經過你。", "Next time, every value is checked automatically, and if all pass it is approved without you.");
+  // Only what changes the user's next step is said; how the sender is learned lives on the Senders page.
   let note: string | null = null;
-  if (tone === "plain" && count === 1) note = t(`這是 ${a.sender} 的第一份${docType}，版面已經記下。`, `This was the first ${kind} from ${a.sender}, and its layout is now saved. `) + later;
-  else if (tone === "plain" && count) note = t(`${a.sender} 的${docType}已確認 ${count} 份${active ? `，用這家專屬的第 ${active.version} 版讀法` : ""}。`,
-    `${many(count, kind)} from ${a.sender} approved so far${active ? `, read with its own version ${active.version}` : ""}. `) + later;
   if (info?.hold) {
-    const paused = t(`${a.sender} 的自動確認暫停中：下一份人工審核完全沒改，就恢復。`, `Automatic approval for ${a.sender} is paused until a reviewed document needs no change.`);
+    const paused = t(`${a.sender} 的自動確認暫停中`, `Automatic approval for ${a.sender} is paused`);
     if (tone === "plain") note = paused; else next = paused;
   }
 
@@ -525,7 +510,9 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
             </p>
             <ViaEmail doc={doc} />
           </div>
+          <Button variant="outline" size="sm" disabled={reopen === "busy"} onClick={markWrong}>{t("有錯，重新審核", "Reopen for review")}</Button>
         </div>
+        {typeof reopen === "object" && <p className="mt-2 text-sm text-destructive" role="alert">{errorMessage(reopen.error)}</p>}
         <dl className="m-0 mt-5 grid grid-cols-2 gap-y-3 border-t pt-4 min-[600px]:grid-cols-4">
           {stats.map(([x, label], i) => (
             <div key={label} className={cn("px-4 first:pl-0", i % 2 && "border-l", i === 2 && "min-[600px]:border-l")}>
@@ -553,14 +540,6 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
       {a.approved_at && <Approved {...approvedData} onViewPdf={() => setPdf(true)} />}
 
       <Export doc={doc} />
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-1 text-sm text-muted-foreground">
-        <span className="min-w-0 grow basis-[24rem]">{t("發現錯誤？重新審核並改正，系統會從修正中學習；這家的自動確認會先暫停。",
-          "Spotted a mistake? Reopen it and correct it; the fix is learned, and automatic approval for this sender pauses meanwhile.")}</span>
-        <Button variant="outline" size="sm" disabled={reopen === "busy"} onClick={markWrong}>{t("重新審核", "Reopen for review")}</Button>
-        <a href="#" className="text-primary">{t("回到文件清單", "Back to documents")}</a>
-        {typeof reopen === "object" && <span className="w-full text-destructive" role="alert">{errorMessage(reopen.error)}</span>}
-      </div>
       </div>
       {pdf && approvedData.rec && <PdfPanel docId={doc.id} pages={approvedData.rec.source.pages} onClose={closePdf} />}
     </div>
