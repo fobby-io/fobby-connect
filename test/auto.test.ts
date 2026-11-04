@@ -7,6 +7,7 @@ import { verifyDocument, type Decide } from "../src/verify/jev.ts";
 import { checkUrl, deliver, sign, targets, type Graph } from "../src/server/webhook.ts";
 import { png } from "../src/verify/page-image.ts";
 import { PDFDocument } from "pdf-lib";
+import { lazyDb, pgliteDb } from "../src/server/pg-node.ts";
 
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
 const { createApp } = await import("../src/server/app.ts");
@@ -41,11 +42,14 @@ const jev = (p = 0.99) => {
 };
 const noMeta: MetaClient = async () => { throw new Error("no model call expected"); };
 
+const shared = pgliteDb();
 function setup(decide?: Decide) {
   const store = new Map<string, Uint8Array>();
   const enc = new TextEncoder();
-  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  const app = createApp({ files, client: noMeta, decide });
+  // One PGlite per file; each setup is its own space in it, as each team is.
+  const own = new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() }));
+  const files = { get: async (k: string) => (k === "space.json" ? own : store.get(k) ?? null), put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
+  const app = createApp({ files, db: lazyDb(shared), client: noMeta, decide });
   const put = (s: unknown) => { store.set("samples/s1.json", enc.encode(JSON.stringify(s))); store.set("samples/s1.pdf", new Uint8Array([37, 80, 68, 70])); };
   put(sample());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

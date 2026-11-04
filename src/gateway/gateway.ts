@@ -31,21 +31,30 @@ export type ExtractResult = { output: unknown; raw: string; usage: Usage; cost_u
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export function gateway(client: MetaClient, ledger: Ledger) {
+/** keep stores the request body of each step once, so any read can be replayed exactly; without it nothing is kept. */
+export function gateway(client: MetaClient, ledger: Ledger, keep?: (key: string, body: Uint8Array) => Promise<void>) {
   async function send(req: ChatRequest, step_id: string, purpose: "extract" | "reask") {
+    let prompt_key: string | null = null;
+    if (keep) {
+      // A re-ask adds the failed answer to the messages, so it is kept apart; retries of one send share its body.
+      const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${step_id}|${purpose}`)));
+      prompt_key = `prompts/${[...hash.slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("")}.json`;
+      await keep(prompt_key, new TextEncoder().encode(JSON.stringify(req)));
+    }
     for (let attempt = 0; ; attempt++) {
       const ctl = new AbortController();
       const timer = setTimeout(() => ctl.abort(), GATEWAY.timeout_ms);
+      const call = { call_id: crypto.randomUUID(), step_id, prompt_key, attempt_purpose: purpose, attempt, model: req.model };
       try {
         const r = await client(req, ctl.signal);
         const cost = costUsd(req.model, r.usage);
-        await ledger.record({ step_id, attempt_purpose: purpose, attempt, model: req.model, usage: r.usage, cost_usd: cost, ms: r.ms, request_id: r.request_id });
+        await ledger.record({ ...call, usage: r.usage, cost_usd: cost, ms: r.ms, request_id: r.request_id });
         return { ...r, cost };
       } catch (e) {
         if (e instanceof CreditExhausted) throw e;
         const err = e as MetaError;
         if (ctl.signal.aborted) {
-          await ledger.record({ step_id, attempt_purpose: purpose, attempt, model: req.model, usage: null, cost_usd: null, ms: GATEWAY.timeout_ms, request_id: null });
+          await ledger.record({ ...call, usage: null, cost_usd: null, ms: GATEWAY.timeout_ms, request_id: null });
         }
         const retryable = ctl.signal.aborted || (err instanceof MetaError && err.retryable);
         if (!retryable) throw new NonRetryableError("request_rejected", err.message);

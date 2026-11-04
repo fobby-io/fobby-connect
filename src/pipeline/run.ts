@@ -1,7 +1,8 @@
 import { PDFDocument } from "pdf-lib";
 import type { gateway as makeGateway } from "../gateway/gateway.ts";
 import type { ChatRequest, ContentPart } from "../gateway/meta-client.ts";
-import { extractInstructions, textPageMessage } from "../gateway/prompts.ts";
+import { DEFAULT_MODEL } from "../gateway/models.ts";
+import { extractInstructions, PROMPT_TEMPLATE_HASH, textPageMessage } from "../gateway/prompts.ts";
 import { headerClass } from "../profiles/classify.ts";
 import { resolvePrompt, selectPrompt, type Page, type PromptVersion, type Read, type Store } from "../profiles/loop.ts";
 import { checkDocument, type Finding } from "../rules/checks.ts";
@@ -56,6 +57,8 @@ export type RunResult = {
   cls: string | null; sender: string | null; issuer: string | null; prompt: PromptVersion | null;
   pages: { page_no: number; route: "text" | "vision"; output: Page; reread: boolean }[];
   findings: Finding[]; cost_usd: number;
+  /** What read it; missing on documents read before they were recorded. */
+  template_hash?: string; model?: string;
 };
 
 export async function runDocument(g: Gateway, s: Store, pages: PageInput[], o: { doc_id: string; sender?: string | null; effort?: Effort }): Promise<RunResult> {
@@ -99,7 +102,7 @@ export async function runDocument(g: Gateway, s: Store, pages: PageInput[], o: {
   return {
     cls, sender, issuer: p1.issuer, prompt,
     pages: outputs.map((output, i) => ({ page_no: pages[i]!.page_no, route: pages[i]!.route, output, reread: reread[i]! })),
-    findings, cost_usd: cost,
+    findings, cost_usd: cost, template_hash: PROMPT_TEMPLATE_HASH, model: DEFAULT_MODEL,
   };
 }
 
