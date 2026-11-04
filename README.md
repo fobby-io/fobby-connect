@@ -17,7 +17,7 @@ OCR alone gives text, not a shipment. The pipeline below turns a PDF into checke
 ```mermaid
 flowchart TD
     A(["PDF in: upload or email"]) --> B{"Text layer on the page?"}
-    B -- "yes: digital PDF" --> C["Positioned text<br/>exact characters, cheap"]
+    B -- "yes: digital PDF" --> C["Positioned text<br/>characters taken from the file,<br/>not guessed from pixels"]
     B -- "no: scan" --> D["One-page image PDF<br/>for vision"]
     C --> E{"Sender and class known<br/>from the text layer?"}
     D --> F["Read page 1 first<br/>issuer and doc type pick the profile"]
@@ -61,7 +61,7 @@ Blue steps call a model, green steps are code only, and the orange step needs a 
 
 | What we changed | Why it matters |
 |---|---|
-| **Route each page.** Digital pages go to the model as positioned text, and only scanned pages are sent as an image. | Text is exact and costs far fewer tokens. Vision is used only where nothing else works. |
+| **Route each page.** Digital pages go to the model as positioned text, and only scanned pages are sent as an image. | On a digital PDF every character comes from the file itself, so a 0 cannot turn into an O and a 1 into an l. Vision is used only for scans, where there is no text to take. |
 | **Pick the reading profile early.** When the text layer already names the sender and says "packing list" or "shipping order", every page is read at once with that sender's profile. Otherwise page 1 goes first and its issuer picks the profile. | Multi-page documents from known senders do not wait on page 1. |
 | **Prompt hierarchy.** The fallback prompt sits under a document-class profile, which sits under a sender profile. The sender profile holds notes and examples from that sender's approved documents. | A new sender still reads well, and a known one reads like the documents a person already approved. |
 | **Strict schema, copy only.** The model returns JSON in a fixed schema, copies values as printed, and gives each value a box on the page. | No invented values. Every value can be shown on the page, and the code does all conversions. |
