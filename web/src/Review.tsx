@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+// Scanned pages (CCITT fax, JBIG2, JPEG 2000) decode in wasm; without these the page renders blank.
+import jbig2Url from "pdfjs-dist/wasm/jbig2.wasm?url";
+import "pdfjs-dist/wasm/openjpeg.wasm?url";
 import { creditText, errorMessage, isCreditExhausted, PASS, post, reasonText, request, WRONG, type Doc, type NormDoc } from "./api.ts";
 import { Busy, ErrorText, ViaEmail } from "./App.tsx";
 import { Button } from "./components/ui/button.tsx";
@@ -554,7 +557,7 @@ export function PageViewer({ docId, pageNos, current, box }: { docId: string; pa
     (async () => {
       const bytes = await (await request(`/api/documents/${docId}/file`)).arrayBuffer();
       if (dead) return;
-      task = pdfjs.getDocument({ data: bytes });
+      task = pdfjs.getDocument({ data: bytes, wasmUrl: new URL(".", new URL(jbig2Url, location.href)).href });
       const pdf = await task.promise;
       for (const [i, n] of pageNos.entries()) {
         if (dead) return;

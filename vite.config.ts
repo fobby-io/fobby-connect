@@ -9,7 +9,11 @@ export default defineConfig(
     : {
         root: "web/src",
         plugins: [react(), tailwindcss()],
-        build: { outDir: "../dist", emptyOutDir: true },
+        // pdf.js looks its wasm files up by name in one folder, so those keep their names.
+        build: {
+          outDir: "../dist", emptyOutDir: true,
+          rollupOptions: { output: { assetFileNames: (a) => (a.names?.[0]?.endsWith(".wasm") ? "assets/[name][extname]" : "assets/[name]-[hash][extname]") } },
+        },
         server: { proxy: { "/api": "http://localhost:8787" } },
       },
 );
