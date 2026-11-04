@@ -17,6 +17,7 @@ private-samples/
 /concepts_brief.md
 .impeccable/
 # >>> YOUR CTO JEV START >>>
+/docs
 .cto-brain.json
 .cto-brain.json.*tmp
 debug_stdin.json
