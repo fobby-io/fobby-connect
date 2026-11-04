@@ -70,6 +70,28 @@ describe("createApp", () => {
     expect((await r.json()).error.code).toBe("credit_exhausted");
   });
 
+  it("refuses a document over 20 pages before any read", async () => {
+    const c = reads();
+    const { app } = setup(c);
+    const d = await PDFDocument.create();
+    for (let i = 0; i < 21; i++) d.addPage();
+    const r = await call(app, "/api/documents", { method: "POST", body: (await d.save()).slice() });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error.code).toBe("too_many_pages");
+    expect(c).not.toHaveBeenCalled();
+  });
+
+  it("answers a network failure as a JSON 500, and never sends the prompt's examples", async () => {
+    const { app } = setup(async () => { throw new MetaError(0, false, "fetch failed"); });
+    const r = await call(app, "/api/documents", { method: "POST", body: await pdf() });
+    expect(r.status).toBe(500);
+    expect((await r.json()).error.message).toMatch(/fetch failed/);
+
+    const ok = setup(reads());
+    const doc = await (await call(ok.app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    expect(Object.keys(doc.run.prompt)).toEqual(["id", "level", "key", "version"]);
+  });
+
   it("returns errors in one shape", async () => {
     const { app } = setup(reads());
     const r = await call(app, "/api/documents/nope");

@@ -19,6 +19,7 @@ export type Saved = { id: string; name: string; run: RunResult; pages: PageInput
 export type Sample = { id: string; name: string; sender: string };
 
 const MAX_UPLOAD = 25 * 1024 * 1024;
+const MAX_PAGES = 20;
 const enc = new TextEncoder(), dec = new TextDecoder();
 const toJson = (x: unknown) => enc.encode(JSON.stringify(x));
 const fail = (status: number, code: string, message: string) => Object.assign(new Error(message), { status, code });
@@ -39,7 +40,8 @@ export function createApp(deps: Deps) {
     return d;
   };
   const save = (d: Saved) => files.put(`runs/${d.id}.json`, toJson(d));
-  const view = (d: Saved) => ({ id: d.id, name: d.name, run: d.run, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ?? null, spent: spent() });
+  // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
+  const view = (d: Saved) => ({ id: d.id, name: d.name, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ?? null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
 
   // Profiles live in one JSON: read per request, written back only when the request changed them.
@@ -71,6 +73,8 @@ export function createApp(deps: Deps) {
       const id = newId();
       await files.put(`runs/${id}.pdf`, bytes);
       const pages = await preparePages(bytes);
+      // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
+      if (pages.length > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${pages.length} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
       const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender: url.searchParams.get("sender") || null }));
       const d: Saved = { id, name: url.searchParams.get("name") ?? id, run, pages };
       await save(d);
@@ -141,7 +145,9 @@ export function createApp(deps: Deps) {
       } catch (e) {
         if (e instanceof CreditExhausted) return json(402, { error: { code: "credit_exhausted", message: "示範額度已用完，請打開範例貨件。" } });
         const x = e as { status?: number; code?: string; message: string };
-        return json(x.status ?? 500, { error: { code: x.code ?? "failed", message: x.message } });
+        // A network failure carries status 0 and Meta's own 429/503 are not this API's answer: anything else is a 500.
+        const status = x.status && x.status >= 400 && x.status < 500 && x.code ? x.status : 500;
+        return json(status, { error: { code: x.code ?? "failed", message: x.message } });
       }
     },
   };

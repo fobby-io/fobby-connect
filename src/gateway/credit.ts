@@ -10,7 +10,8 @@ export const creditGuard = (client: MetaClient): MetaClient => async (req, signa
   try {
     return await client(req, signal);
   } catch (e) {
-    if (e instanceof MetaError && (e.status === 402 || /credit|quota|billing/i.test(e.message))) throw new CreditExhausted(e.message);
+    // 429 is the rate limit, which the gateway retries, even when its message says "quota".
+    if (e instanceof MetaError && (e.status === 402 || (e.status !== 429 && /credit|quota|billing/i.test(e.message)))) throw new CreditExhausted(e.message);
     throw e;
   }
 };
