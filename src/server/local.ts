@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { cachedClient } from "../../eval/cache.ts";
 import { metaClient } from "../gateway/meta-client.ts";
+import { jevClient } from "../verify/jev.ts";
 import { createApp, type Files } from "./app.ts";
 
 const DATA = process.env.DATA_DIR ?? "data";
@@ -26,7 +27,9 @@ const files: Files = {
   get: async (key) => existsSync(fileOf(key)) ? new Uint8Array(readFileSync(fileOf(key))) : null,
   put: async (key, bytes) => { mkdirSync(dirname(fileOf(key)), { recursive: true }); writeFileSync(fileOf(key), bytes); },
 };
-const app = createApp({ files, client, spent });
+const decide = process.env.OPENROUTER_API_KEY ? jevClient(process.env.OPENROUTER_API_KEY) : undefined;
+if (!decide) console.warn("OPENROUTER_API_KEY is not set: nothing is verified, every document goes to review");
+const app = createApp({ files, client, spent, decide });
 
 const port = Number(process.env.PORT ?? 8787);
 createServer(async (req, res) => {

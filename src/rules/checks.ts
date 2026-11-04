@@ -70,6 +70,18 @@ export function checkDocument(pages: Page[]): Finding[] {
     if (extra.length) out.push({ page: mp, path: "header.shipping_marks", message: `PO in the rows but not in the shipping marks: ${extra.join(", ")}` });
   }
 
+  // Both weights can be read and still sit in each other's column; gross under net means they are swapped or misread.
+  pages.forEach((p, i) => {
+    const nw = p.columns.findIndex((c) => c.field === "nw_kg"), gw = p.columns.findIndex((c) => c.field === "gw_kg");
+    if (nw < 0 || gw < 0) return;
+    p.rows.forEach((r, ri) => {
+      if (r.t !== "item" && r.t !== "ditto") return;
+      const n = rowValue(r.cells[nw]), g = rowValue(r.cells[gw]);
+      if (n !== null && g !== null && new Decimal(g).lt(n))
+        out.push({ page: i + 1, path: `rows[${ri}].gw_kg`, message: `row ${ri + 1} gross weight ${r.cells[gw]} is less than its net weight ${r.cells[nw]}` });
+    });
+  });
+
   pages.forEach((p, i) => {
     p.containers.forEach((c, j) => {
       if (c.number?.v && !isValidContainerNo(c.number.v))

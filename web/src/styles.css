@@ -113,6 +113,12 @@
 }
 .steps li.on::before { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
 .steps li.done::before { content: "✓"; background: var(--ok-bg); border-color: transparent; color: var(--ok); }
+.steps li.skip::before { content: "↷"; background: var(--muted); border-color: transparent; color: var(--muted-foreground); }
+
+/* Export flow canvas: edges between nodes, a dotted grid behind them. */
+.flow-grid { background-image: radial-gradient(var(--border) 1px, transparent 1px); background-size: 18px 18px; }
+.flow-edges path { fill: none; stroke: var(--muted-foreground); stroke-width: 1.6; opacity: .7; }
+.flow-edges path.live { stroke: var(--primary); opacity: 1; }
 
 /* Wires from printed columns to standard fields. */
 .wires path { fill: none; stroke: var(--primary); stroke-width: 1.5; opacity: .55; }

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import { creditText, errorMessage, isCreditExhausted, post, request, type Doc, type NormDoc } from "./api.ts";
+import { creditText, errorMessage, isCreditExhausted, PASS, post, reasonText, request, WRONG, type Doc, type NormDoc } from "./api.ts";
 import { Busy, ErrorText, Samples } from "./App.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
@@ -19,8 +19,8 @@ type V = { v: string | null; raw: string | null };
 const SECTION = "mb-4 gap-0 rounded-2xl p-[18px] shadow-none";
 const LINK = "h-auto p-0 text-[13px] underline";
 
-export function Review({ doc, onStep, onApproved, onOpen }: {
-  doc: Doc; onStep: (n: number) => void; onApproved: (d: Doc) => void; onOpen: (d: Doc) => void;
+export function Review({ doc, onApproved, onOpen }: {
+  doc: Doc; onApproved: (d: Doc) => void; onOpen: (d: Doc) => void;
 }) {
   useLang();
   const L = labels();
@@ -34,6 +34,7 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
   const [openRow, setOpenRow] = useState<Row | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Set<string>>(new Set());
+  const [showMap, setShowMap] = useState(false);
   const [sender, setSender] = useState(() => {
     const issuer = doc.normalized.header.shipper?.v ?? (run.issuer ?? "").split("\n")[0]!;
     return run.sender ?? issuer.replace(/\b(CO|CORP|INC|LTD|LIMITED|ENTERPRISE)\b\.?|[.,]/gi, "").trim();
@@ -71,7 +72,6 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
     if (approval) return;
     if (!sender.trim()) return senderInput.current?.focus();
     setApproval({ busy: true });
-    onStep(3);
     try {
       const j = await post<{ corrected: number; learn: NonNullable<Doc["approved"]>["learn"]; approved_at?: string }>(`/api/documents/${doc.id}/approve`, { sender, answer: answerRef.current });
       onApproved({ ...doc, approved: { sender: sender.trim().toUpperCase(), learn: j.learn, corrected: j.corrected, approved_at: j.approved_at } });
@@ -91,18 +91,30 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
     return (
       <Busy title={t("沒有存成功", "Not saved")}>
         <ErrorText error={approval.error} onOpen={onOpen} />
-        <div className="mt-4"><Button variant="outline" onClick={() => { setApproval(null); onStep(2); }}>{t("回到檢查與修正", "Back to review")}</Button></div>
+        <div className="mt-4"><Button variant="outline" onClick={() => setApproval(null)}>{t("回到檢查與修正", "Back to review")}</Button></div>
       </Busy>
     );
 
   const probs = problems(findings);
   const warnCols = new Set(probs.map((p) => p.col).filter(Boolean));
   const warnKeys = new Set(probs.map((p) => p.key));
+  // The second system's doubts, on the values as first read: a cell by page, row and normalized column; a header or total by key.
+  const v = doc.verify;
+  const doubtCells = (v?.pages ?? []).flatMap((pg, pi) => pg.rows.flatMap((r, ri) => r.flatMap((p, ci) => {
+    const c = orig[pi]?.columns[ci];
+    return p !== null && p < PASS && c ? [{ pi, ri, ci, col: FIELD_COL[c.field] ?? c.field, label: c.label.replace(/\n/g, " "), value: orig[pi]!.rows[ri]?.cells[ci] ?? "", p }] : [];
+  })));
+  const doubtVals = (v?.pages ?? []).flatMap((pg, pi) => Object.entries(pg.values).filter(([, p]) => p < PASS).map(([key, p]) => ({ pi, key, p })));
+  const doubtAt = new Map(doubtCells.map((d) => [`${d.pi}:${d.ri}:${d.col}`, d.p]));
+  const doubtKey = new Map(doubtVals.map((d) => [d.key, d.p]));
+  const doubtWord = (p: number) => (p < WRONG ? t("第二系統判定可能讀錯", "the second system says this is likely wrong") : t("第二系統不確定", "the second system is unsure"));
   const issuer = norm.header.shipper?.v ?? ((run.issuer ?? "").split("\n")[0] || t("（沒讀到寄件公司）", "(sender not read)"));
   const sum = (k: string) => norm.rows.reduce((a, r) => a + Number((r as unknown as Record<string, V>)[k]!.v ?? 0), 0);
   const p0 = run.prompt;
   const sourceLine = p0?.level === "sender"
     ? t(`這家已經學過，用它專屬的讀法（第 ${p0.version} 版）。`, `This sender is known; read with its own reading (version ${p0.version}).`)
+    : run.sender
+      ? t(`這家確認過，${run.cls} 的通用讀法就讀得對，還不需要專屬版本。`, `This sender is known and the general ${run.cls} reading reads it right, so it has no own version yet.`)
     : t(`這家第一次出現，用${p0?.level === "class" ? `${run.cls} 的通用讀法` : "最基本的讀法"}。你確認後，系統會記住這家的格式。`,
       `First time from this sender; read with ${p0?.level === "class" ? `the general ${run.cls} reading` : "the basic reading"}. Once you approve, it remembers this sender's layout.`);
 
@@ -127,6 +139,11 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
           <div className="flex-[1_1_320px]">
             <h2 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${issuer} 的${L.DOC_TYPE[run.cls ?? ""] ?? "文件"}`, `${L.DOC_TYPE[run.cls ?? ""] ?? "Document"} from ${issuer}`)}</h2>
             <p className="text-muted-foreground">{t(`共 ${run.pages.length} 頁。`, `${run.pages.length} page${run.pages.length === 1 ? "" : "s"}. `)}{sourceLine}</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label htmlFor="sender" className="text-sm font-semibold">{t("寄件公司", "Sender")}</label>
+              <Input id="sender" ref={senderInput} className="w-auto min-w-[240px]" value={sender} onChange={(e) => setSender(e.target.value)} />
+              <span className="text-[13px] text-muted-foreground">{t("系統用這個名字記住這家的格式。", "The layout is remembered under this name.")}</span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2.5">
             {([[norm.rows.length, t("列明細", "line items")], [sum("pkgs"), t("箱", "cartons")], [sum("pallets"), t("板", "pallets")], [sum("gw_kg"), t("毛重 kg", "gross kg")]] as const).map(([v, label]) => (
@@ -136,6 +153,32 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
               </div>
             ))}
           </div>
+        </div>
+        {!!doc.auto?.reasons.length && (
+          <div className="mt-3.5 rounded-[10px] border px-4 py-3">
+            <h3 className="mb-1 text-[15px] font-bold">{t("為什麼這份要人工審核", "Why this one needs a person")}</h3>
+            <ul className="list-disc pl-5 text-sm">{doc.auto.reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}</ul>
+          </div>
+        )}
+        <div className={cn("mt-3.5 rounded-[10px] px-4 py-3", doubtCells.length + doubtVals.length ? "border border-warn-line bg-warn-bg" : v && !v.unchecked_pages ? "bg-ok-bg text-ok" : "border")}>
+          <h3 className="mb-1 text-[15px] font-bold">{t("第二系統核對", "Second check")}</h3>
+          {!v && <p className="text-sm">{t("這份沒有經過第二系統核對，每個值都請你看過。", "This document was not checked by the second system; please look over every value.")}</p>}
+          {v && <p className="text-sm">{t(`第二系統（Jev）拿原文逐一核對了 ${v.checked} 個值，`, `The second system (Jev) checked ${v.checked} values against the printed text: `)}
+            {doubtCells.length + doubtVals.length ? t(`${doubtCells.length + doubtVals.length} 個有疑慮，在下面標成橘色。`, `${doubtCells.length + doubtVals.length} doubtful, marked orange below.`) : t("全部通過。", "all passed.")}
+            {v.unchecked_pages ? t(`另有 ${v.unchecked_pages} 頁沒有文字層或核對失敗，請你看過。`, ` ${v.unchecked_pages} page(s) had no text layer or could not be checked; please look them over.`) : ""}</p>}
+          {doubtCells.length + doubtVals.length > 0 && (
+            <ol className="mt-1.5 list-decimal pl-5 text-sm">
+              {doubtVals.map((d) => (
+                <li key={`v${d.pi}${d.key}`}>{L.HEAD[d.key] ?? L.TOTAL[d.key] ?? d.key}{t(`：「${orig[d.pi]!.header[d.key]?.v ?? orig[d.pi]!.totals[d.key]?.v}」，`, `: "${orig[d.pi]!.header[d.key]?.v ?? orig[d.pi]!.totals[d.key]?.v}", `)}{doubtWord(d.p)}{t("。", ".")}</li>
+              ))}
+              {doubtCells.slice(0, 12).map((d) => (
+                <li key={`c${d.pi}-${d.ri}-${d.ci}`}>{t(`第 ${d.pi + 1} 頁第 ${d.ri + 1} 列「${d.label}」：${d.value}，`, `Page ${d.pi + 1}, row ${d.ri + 1}, "${d.label}": ${d.value}, `)}{doubtWord(d.p)}{t("。", ".")}
+                  <Button variant="link" className={cn(LINK, "ml-1.5")} onClick={() => { setCurrent(d.pi); setOpenRow({ page: d.pi, row: d.ri }); }}>{t("打開這一列", "Open this row")}</Button>
+                </li>
+              ))}
+              {doubtCells.length > 12 && <li>{t(`還有 ${doubtCells.length - 12} 個，在明細裡標成橘色。`, `${doubtCells.length - 12} more, marked orange in the line items.`)}</li>}
+            </ol>
+          )}
         </div>
         {probs.length ? (
           <div className="mt-3.5 rounded-[10px] border border-warn-line bg-warn-bg px-4 py-3">
@@ -156,12 +199,21 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
         )}
       </section>
 
-      <MapCard key={current} page={answer[current]!} current={current} warnCols={warnCols} pageTabs={pageTabs}
-        changed={(ci) => colChanged(orig, answer, current, ci)}
-        onRewire={(ci, field) => { update((a) => { a[current]!.columns[ci]!.field = field as Page["columns"][number]["field"]; }); void refresh(); }}>
-        <MissingColumn docId={doc.id} page={current} answerPage={answer[current]!} onOpen={onOpen}
-          onRead={(output) => { update((a) => { a[current] = output; }); setOpenRow(null); void refresh(); }} />
-      </MapCard>
+      {showMap || probs.length ? (
+        <MapCard key={current} page={answer[current]!} current={current} warnCols={warnCols} pageTabs={pageTabs}
+          changed={(ci) => colChanged(orig, answer, current, ci)}
+          onRewire={(ci, field) => { update((a) => { a[current]!.columns[ci]!.field = field as Page["columns"][number]["field"]; }); void refresh(); }}>
+          <MissingColumn docId={doc.id} page={current} answerPage={answer[current]!} onOpen={onOpen}
+            onRead={(output) => { update((a) => { a[current] = output; }); setOpenRow(null); void refresh(); }} />
+        </MapCard>
+      ) : (
+        // Nothing failed: the mapping is one line, so the header and line items are on the first screen.
+        <Card className={cn(SECTION, "flex-row flex-wrap items-center gap-3")}>
+          <h3 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h3>
+          <span className="text-[13px] text-muted-foreground">{t(`第 ${current + 1} 頁 ${answer[current]!.columns.length} 個印出來的欄位都已對應。`, `All ${answer[current]!.columns.length} printed columns on page ${current + 1} are mapped.`)}</span>
+          <Button variant="link" className={LINK} onClick={() => setShowMap(true)}>{t("展開查看或修改", "Show or change")}</Button>
+        </Card>
+      )}
 
       <div className="grid items-start gap-4 min-[1101px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
         <Card className={cn(SECTION, "min-[1101px]:sticky min-[1101px]:top-3")}>
@@ -183,7 +235,8 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
                 return (
                   <div key={k} className={cn(k === "shipping_marks" && "col-span-full")}>
                     <div className="text-[13px] text-muted-foreground">{name}</div>
-                    <div className={cn("font-semibold break-words", !nv?.v && "font-normal text-muted-foreground", warnKeys.has(k) && "text-warn", (now || null) !== before && "bg-edit")}>{nv?.v ?? "—"}</div>
+                    <div className={cn("font-semibold break-words", !nv?.v && "font-normal text-muted-foreground", (warnKeys.has(k) || doubtKey.has(k)) && "text-warn", (now || null) !== before && "bg-edit")}>{nv?.v ?? "—"}</div>
+                    {doubtKey.has(k) && <div className="text-xs text-warn">{doubtWord(doubtKey.get(k)!)}</div>}
                     {nv?.raw && nv.raw !== nv.v && <div className="raw-clamp text-xs text-muted-foreground">{t("原文：", "Printed: ")}{nv.raw}</div>}
                     {editing.has(key)
                       ? <RawEditor value={answer[pi]!.header[k]?.v ?? null} before={before} label={t(`${name} 原文`, `${name} printed text`)}
@@ -222,8 +275,10 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
                           if (k === "pkg_range") content = span(r.pkg_from, r.pkg_to);
                           if (k === "pallet_range") content = span(r.pallet_from, r.pallet_to);
                           if (k === "qty" && r.qty_unit.v) content = `${content} ${r.qty_unit.v}`;
+                          const doubt = doubtAt.get(`${pi}:${r.row}:${k}`);
                           return (
-                            <TableCell key={k} className={cn("px-2.5 py-2 align-top",
+                            <TableCell key={k} title={doubt !== undefined ? doubtWord(doubt) : undefined} className={cn("px-2.5 py-2 align-top",
+                              doubt !== undefined && "bg-warn-bg font-semibold text-warn shadow-[inset_0_0_0_2px_var(--warn-line)]",
                               cls === "num" && "text-right font-mono text-[13px]",
                               k === "description" ? "min-w-[220px] text-[13px] whitespace-normal" : "whitespace-nowrap",
                               ["po", "part_no", "pkg_range", "pallet_range"].includes(k) && "font-mono text-[13px]",
@@ -260,10 +315,7 @@ export function Review({ doc, onStep, onApproved, onOpen }: {
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-10 flex flex-wrap items-center gap-4 border-t bg-card px-6 py-3">
-        <div className="flex items-center gap-2">
-          <label htmlFor="sender">{t("寄件公司", "Sender")}</label>
-          <Input id="sender" ref={senderInput} className="w-auto min-w-[220px]" value={sender} onChange={(e) => setSender(e.target.value)} />
-        </div>
+        <span className="font-semibold">{sender.trim().toUpperCase() || t("（請在上方填寄件公司）", "(name the sender above)")}</span>
         <span className="text-muted-foreground" role="status">{refreshError ?? (n ? t(`你改了 ${n} 處`, `You changed ${n} field${n === 1 ? "" : "s"}`) : t("還沒有修改", "No changes yet"))}</span>
         <Button className="ml-auto" onClick={approve}>{n ? t("確認修正，讓系統學起來", "Approve corrections and let it learn") : t("全部正確，確認", "All correct, approve")}</Button>
       </div>

@@ -50,6 +50,8 @@ export function problems(findings: Finding[]): Problem[] {
     else if ((m = msg.match(/^(\w+) differs between pages: page (\d+) has (.+), page (\d+) has (.+)$/)))
       text = t(`${HEAD[m[1]!] ?? m[1]}前後不一致：第 ${m[2]} 頁是 ${m[3]}，第 ${m[4]} 頁是 ${m[5]}`, `${HEAD[m[1]!] ?? m[1]} differs between pages: page ${m[2]} has ${m[3]}, page ${m[4]} has ${m[5]}`);
     else if ((m = msg.match(/^container number (\S+) fails/))) text = t(`貨櫃號碼 ${m[1]} 的檢查碼不對`, `Container number ${m[1]} fails its check digit`);
+    else if ((m = msg.match(/^row (\d+) gross weight (.+) is less than its net weight (.+)$/)))
+      text = t(`第 ${m[1]} 列毛重 ${m[2]} 比淨重 ${m[3]} 還小，可能兩欄對調或讀錯`, `Row ${m[1]}: gross weight ${m[2]} is below net weight ${m[3]}; the columns may be swapped or misread`);
     return { text, col: CHECK_COL[key], key, pages: list.map((x) => x.page).sort() };
   });
 }

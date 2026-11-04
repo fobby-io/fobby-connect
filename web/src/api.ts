@@ -10,9 +10,16 @@ export type LearnResult =
   | { outcome: "activated"; version: Version; tries: number; scores: { candidate: number[]; current: number[] } }
   | { outcome: "kept"; version: Version | null; always_review: string[]; tries: number };
 export type Approved = { sender: string; learn: LearnResult; corrected: number; approved_at?: string };
+// What src/verify/jev.ts and src/server/app.ts return about the second system's check and automatic approval.
+export type PageCheck = { page_no: number; checked: boolean; values: Record<string, number>; rows: (number | null)[][] };
+export type Verification = { pages: PageCheck[]; checked: number; flagged: number; unchecked_pages: number; cost_usd: number; error?: string };
+export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged" | "findings" | "layout_changed" | "reopened";
+/** Same marks as the server's PASS and WRONG. */
+export const PASS = 0.75, WRONG = 0.5;
 // The `view` the server returns for a document.
 export type Doc = {
-  id: string; name: string; normalized: NormDoc; approved: Approved | null;
+  id: string; name: string; normalized: NormDoc; approved: Approved | null; created_at: string | null;
+  verify: Verification | null; auto: { ok: boolean; reasons: AutoReason[] } | null;
   run: {
     cls: string | null; sender: string | null; issuer: string | null;
     prompt: { level: string; version: number } | null;
@@ -20,7 +27,22 @@ export type Doc = {
   };
 };
 export type Sample = { id: string; name: string; sender: string };
-export type Profile = { sender: string; versions: { key: string; version: number; status: string; notes: string[] }[] };
+export type ListedDoc = {
+  id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
+  created_at: string; flagged: number | null; reopened: boolean;
+};
+export type ReadingVersion = { id: string; key: string; version: number; status: string; notes: string[]; columns: { field: string; label: string }[]; always_review: string[]; change: string; examples: number };
+export type SenderInfo = { sender: string; hold: boolean; versions: ReadingVersion[]; approved: { cls: string; count: number }[]; docs: ListedDoc[] };
+
+export const reasonText = (r: AutoReason) => ({
+  unknown_sender: t("第一次收到這家的這種文件", "First document of this kind from this sender"),
+  on_hold: t("這家之前有一份自動確認後被改過，先暫停自動確認", "An earlier automatic approval for this sender was corrected, so automatic approval is paused"),
+  not_checked: t("第二系統沒有核對到每個值（掃描頁或核對失敗）", "The second system could not check every value (a scanned page or a failed check)"),
+  flagged: t("第二系統對某些值有疑慮", "The second system doubts some values"),
+  findings: t("自動核對有沒通過的項目", "Some automatic checks failed"),
+  layout_changed: t("欄位跟這家上一份不一樣，可能換了格式", "The columns differ from this sender's last document; the layout may have changed"),
+  reopened: t("這份被標成有錯，重新審核", "This document was marked wrong and reopened"),
+})[r];
 
 // Every error response is { error: { code, message } }; the screen shows message and branches on code.
 export class ApiError extends Error {
