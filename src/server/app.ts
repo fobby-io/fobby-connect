@@ -93,7 +93,7 @@ export function createApp(deps: Deps) {
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/file$/))) {
       const pdf = await files.get(`runs/${m[1]}.pdf`);
       if (!pdf) throw fail(404, "not_found", `document ${m[1]}`);
-      return new Response(pdf, { headers: { "content-type": "application/pdf" } });
+      return new Response(pdf.slice(), { headers: { "content-type": "application/pdf" } });
     }
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)$/))) return json(200, view(await load(m[1]!)));
     // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.

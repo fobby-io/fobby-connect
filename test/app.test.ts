@@ -25,7 +25,7 @@ const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
   return c;
 };
-const pdf = async () => { const d = await PDFDocument.create(); d.addPage(); return d.save(); };
+const pdf = async () => { const d = await PDFDocument.create(); d.addPage(); return (await d.save()).slice(); };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Res = { status: number; headers: Headers; json(): Promise<any> };
 const call = (app: ReturnType<typeof createApp>, path: string, init?: RequestInit): Promise<Res> => app.fetch(new Request(`http://x${path}`, init));
