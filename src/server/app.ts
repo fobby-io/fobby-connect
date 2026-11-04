@@ -83,7 +83,7 @@ export function createApp(deps: Deps) {
     status: d.approved ? (d.auto?.ok ? "auto" : "approved") : "review",
     flagged: d.verify ? d.verify.flagged : null, reopened: d.auto?.reasons.includes("reopened") ?? false,
   });
-  // Everything a team owns lives under the space named in space.json (s0 without one); a demo is reset by writing a new
+  // Everything a team owns lives under the space named in space.json (s0 without one); a site is reset by writing a new
   // name there. Requests never write it, so requests at once always agree on it.
   const space = async () => (await getJson<{ id: string }>("space.json"))?.id ?? "s0";
   const g = gateway(client, dbLedger(db, space), (k, b) => files.put(k, b));
@@ -113,7 +113,7 @@ export function createApp(deps: Deps) {
   async function withStore<T>(f: (s: Store) => Promise<T>, again = true): Promise<T> {
     const sp = await space();
     const { versions, approved: refs } = await db.loadProfiles(sp);
-    // shortcut: every example of the space is read per request, as profiles.json was; load per sender once spaces grow.
+    // shortcut: every example of the space is read per request; load per sender once spaces grow.
     const approved = await Promise.all(refs.map(async (r) => ({ ...(await getJson<Omit<Approved, "doc_id" | "sender" | "cls">>(r.key))!, doc_id: r.doc_id, sender: r.sender, cls: r.cls })));
     const m = memoryStore({ versions, approved });
     const put: PromptVersion[] = [], added: Approved[] = [];

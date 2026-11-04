@@ -27,7 +27,7 @@ export const approvedExamples = pgTable("approved_examples", {
   space_id: text().notNull(), doc_id: text().notNull(), sender: text().notNull(), cls: text().notNull(), key: text().notNull(),
 }, (t) => [primaryKey({ columns: [t.space_id, t.doc_id] })]);
 
-// One row per UTC day for every space: a demo reset must not refill the day.
+// One row per UTC day for every space: a reset must not refill the day.
 export const usage = pgTable("usage", { day: text().primaryKey(), n: integer().notNull().default(0) });
 
 export const modelCalls = pgTable("model_calls", {

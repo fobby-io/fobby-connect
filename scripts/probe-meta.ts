@@ -1,4 +1,4 @@
-// One-off live checks of Meta API behaviour the docs do not state (see docs/hackathon_context.md).
+// One-off live checks of Meta API behaviour the docs do not state.
 // Costs a few cents. Run: npx tsx scripts/probe-meta.ts
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { responseFormat } from "../src/shared/model-output.ts";
