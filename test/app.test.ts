@@ -18,10 +18,10 @@ const PAGE: Page = {
   groups: [], totals: { ...(nulls(TOTALS_KEYS) as Page["totals"]), total_pkgs: { v: "50", box: [0, 0, 1, 1] } }, remarks: [],
 };
 
-function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>) {
+function setup(client: MetaClient, mail?: (m: Mail) => Promise<{ id?: string }>, dailyReads?: number) {
   const store = new Map<string, Uint8Array>();
   const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  return { store, app: createApp({ files, client, mail }) };
+  return { store, app: createApp({ files, client, mail, dailyReads }) };
 }
 const reads = () => {
   const c = vi.fn(async () => ({ content: JSON.stringify(PAGE), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 }));
@@ -130,6 +130,25 @@ describe("createApp", () => {
     expect((await r.json()).error.code).toBe("too_many_pages");
     expect(c).not.toHaveBeenCalled();
     expect(store.size).toBe(0);
+  });
+
+  it("stops model-backed actions at the daily cap as credit_exhausted, counting corrected approvals but not samples or clean ones", async () => {
+    const c = reads();
+    const { app, store } = setup(c, undefined, 2);
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    // An approval without corrections calls no model and is not counted.
+    expect((await call(app, `/api/documents/${doc.id}/approve`, post({ sender: "acme", answer: [PAGE] }))).status).toBe(200);
+    const second = await call(app, "/api/documents", { method: "POST", body: await pdf() });
+    expect(second.status).toBe(200);
+    const calls = c.mock.calls.length;
+    const third = await call(app, "/api/documents", { method: "POST", body: await pdf() });
+    expect(third.status).toBe(402);
+    expect((await third.json()).error.code).toBe("credit_exhausted");
+    expect(c.mock.calls.length).toBe(calls);
+    expect([...store.keys()].filter((k) => k.endsWith(".pdf"))).toHaveLength(2);
+    const fixed = { ...PAGE, rows: [{ ...PAGE.rows[0]!, cells: ["51"] }] };
+    const corrected = await call(app, `/api/documents/${(await second.json()).id}/approve`, post({ sender: "acme", answer: [fixed] }));
+    expect(corrected.status).toBe(402);
   });
 
   it("refuses a file that is not a PDF, or a broken one, before keeping it", async () => {

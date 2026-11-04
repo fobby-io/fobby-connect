@@ -28,7 +28,11 @@ export type Mail = { to: string; subject: string; text: string; attachments: { f
  * flow's email outputs; without it they are not sent. intakeAddress is the address whose mail the host passes to
  * receiveEmail, shown on the flow screen.
  */
-export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string };
+export type Deps = {
+  files: Files; client: MetaClient; spent?: () => number; decide?: Decide; mail?: (m: Mail) => Promise<{ id?: string }>; intakeAddress?: string;
+  /** Model-backed actions allowed per UTC day (a document read, a column re-read, a corrected approval); none means no cap. */
+  dailyReads?: number;
+};
 /** Why a document was not approved automatically; empty when it was. */
 export type AutoReason = "unknown_sender" | "on_hold" | "not_checked" | "flagged" | "findings" | "layout_changed" | "reopened";
 // approved.answer and approved_at are missing on documents approved before export existed.
@@ -96,6 +100,14 @@ export function createApp(deps: Deps) {
   // The prompt's examples hold rows of earlier approved documents, possibly another visitor's: send only which prompt it was.
   const view = (d: Saved) => ({ id: d.id, name: d.name, created_at: d.created_at ?? null, verify: d.verify ?? null, auto: d.auto ?? null, deliveries: d.deliveries ?? [], source: d.source ?? null, run: { ...d.run, prompt: d.run.prompt && { id: d.run.prompt.id, level: d.run.prompt.level, key: d.run.prompt.key, version: d.run.prompt.version } }, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ? (({ answer: _, ...a }) => a)(d.approved) : null, spent: spent() });
   const newId = () => crypto.randomUUID().slice(0, 8);
+  // One small file per paid action under usage/<day>/, outside the space, so a demo reset does not refill the day.
+  // shortcut: list-then-put, so requests at the same moment can pass the cap by a few; use a counter store if that matters.
+  async function spend(kind: "read" | "column" | "learn") {
+    if (!deps.dailyReads) return;
+    const dir = `usage/${new Date().toISOString().slice(0, 10)}/`;
+    if ((await files.list(dir)).length >= deps.dailyReads) throw new CreditExhausted(`daily limit of ${deps.dailyReads} reached`);
+    await files.put(`${dir}${kind}-${crypto.randomUUID()}.json`, toJson({ kind, at: new Date().toISOString() }));
+  }
 
   // Profiles live in one JSON: read per request, written back only when the request changed them.
   // Assumed: two approvals at the same moment, the later write wins; fine for the demo, Postgres replaces it.
@@ -123,6 +135,8 @@ export function createApp(deps: Deps) {
   async function approveDoc(d: Saved, sender: string, answer: Page[]) {
     const model = d.run.pages.map((p) => p.output);
     const corrected = diff(model, answer).length;
+    // Only a corrected answer makes learning call a model.
+    if (corrected) await spend("learn");
     const result = await withStore((s) => learn(s, {
       doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
     }, replayReader(g, s), museRewrite(client)));
@@ -241,6 +255,7 @@ export function createApp(deps: Deps) {
     if (count < 1) throw fail(400, "not_pdf", "這個 PDF 打不開，可能已損壞。");
     // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
     if (count > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${count} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
+    await spend("read");
     const id = newId();
     await files.put(`runs/${id}.pdf`, bytes);
     const pages = await preparePages(bytes);
@@ -344,7 +359,8 @@ export function createApp(deps: Deps) {
       const label = (b.label ?? "").trim().slice(0, 60);
       if (!page || !label || !(LINE_FIELDS as readonly string[]).includes(b.field ?? "")) throw fail(400, "bad_column", "Name the printed column and pick what it is.");
       // The page as the clerk has it now (with their edits), validated like any answer.
-      const current = schemas.compact.parse(b.page ?? d.run.pages[n - 1]!.output);
+      const current = pagesOf([b.page ?? d.run.pages[n - 1]!.output])[0]!;
+      await spend("column");
       const r = await withStore((s) => readMissingColumn(g, s, page, { doc_id: d.id, prompt: d.run.prompt, current, label, field: b.field! }));
       if (!r.output) throw fail(422, "still_missing", `重讀後還是沒有「${label}」這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。`);
       return json(200, { output: r.output, cost_usd: r.cost_usd });
@@ -412,7 +428,8 @@ export function createApp(deps: Deps) {
       try {
         return await handle(req);
       } catch (e) {
-        if (e instanceof CreditExhausted) return json(402, { error: { code: "credit_exhausted", message: "示範額度已用完，請打開範例貨件。" } });        const x = e as { status?: number; code?: string; message: string };
+        if (e instanceof CreditExhausted) return json(402, { error: { code: "credit_exhausted", message: "示範額度已用完，請打開範例貨件。" } });
+        const x = e as { status?: number; code?: string; message: string };
         // A network failure carries status 0 and Meta's own 429/503 are not this API's answer: anything else is a 500.
         const status = x.status && x.status >= 400 && x.status < 500 && x.code ? x.status : 500;
         return json(status, { error: { code: x.code ?? "failed", message: x.message } });
