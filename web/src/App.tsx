@@ -224,7 +224,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           onDragOver={(e) => { e.preventDefault(); setOver(true); }}
           onDragLeave={() => setOver(false)}
           onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}>
-          <h2 className="mb-2 text-xl font-bold">{t("收一份裝箱單或託運單", "Receive a packing list or shipping order")}</h2>
+          <h1 className="mb-2 text-xl font-bold">{t("收一份裝箱單或託運單", "Receive a packing list or shipping order")}</h1>
           <p className="mx-auto mb-5 max-w-[520px] text-muted-foreground">{t("第一系統讀出每一列，第二系統逐一核對每個值。認得的廠商、每個值都核對通過，就自動確認；其他的只把有疑慮的地方標給你看。",
             "The first system reads every row and the second checks every value. A known sender whose values all pass is approved automatically; anything else comes to you with only the doubtful values marked.")}</p>
           <div><Button onClick={() => input.current?.click()}>{t("選擇 PDF", "Choose a PDF")}</Button></div>
@@ -232,7 +232,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           <p className="mt-2 text-[13px] text-muted-foreground">{t("或把 PDF 拖進這個框。之後也可以從 email 收件。", "or drop a PDF into this box. Email intake comes next.")}</p>
         </div>
         <Card className={cn(SECTION, "mb-0")}>
-          <h3 className="mb-1 text-base font-bold">{t("範例貨件", "Sample shipments")}</h3>
+          <h2 className="mb-1 text-base font-bold">{t("範例貨件", "Sample shipments")}</h2>
           <p className="mb-3 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開第二次，就會看到自動確認。", "Already read; you open a copy. Open one from the same sender twice to see automatic approval.")}</p>
           <Samples onOpen={onOpen} />
         </Card>
@@ -399,7 +399,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
               {statusBadge({ status: auto ? "auto" : "approved", reopened: false })}
               <span className="text-sm text-muted-foreground">{a.approved_at ? when(a.approved_at) : ""}</span>
             </div>
-            <h2 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${a.sender} 的${docType}`, `${docType} from ${a.sender}`)}</h2>
+            <h1 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${a.sender} 的${docType}`, `${docType} from ${a.sender}`)}</h1>
             <p className="text-muted-foreground">{doc.name}</p>
             <ViaEmail doc={doc} />
           </div>

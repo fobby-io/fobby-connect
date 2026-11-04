@@ -137,7 +137,7 @@ export function Review({ doc, onApproved, onOpen }: {
       <section className="mb-4 rounded-2xl border bg-card px-6 py-5">
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex-[1_1_320px]">
-            <h2 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${issuer} 的${L.DOC_TYPE[run.cls ?? ""] ?? "文件"}`, `${L.DOC_TYPE[run.cls ?? ""] ?? "Document"} from ${issuer}`)}</h2>
+            <h1 className="mb-1 text-[22px] font-bold tracking-tight">{t(`${issuer} 的${L.DOC_TYPE[run.cls ?? ""] ?? "文件"}`, `${L.DOC_TYPE[run.cls ?? ""] ?? "Document"} from ${issuer}`)}</h1>
             <p className="text-muted-foreground">{t(`共 ${run.pages.length} 頁。`, `${run.pages.length} page${run.pages.length === 1 ? "" : "s"}. `)}{sourceLine}</p>
             <ViaEmail doc={doc} />
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -157,12 +157,12 @@ export function Review({ doc, onApproved, onOpen }: {
         </div>
         {!!doc.auto?.reasons.length && (
           <div className="mt-3.5 rounded-[10px] border px-4 py-3">
-            <h3 className="mb-1 text-[15px] font-bold">{t("為什麼這份要人工審核", "Why this one needs a person")}</h3>
+            <h2 className="mb-1 text-[15px] font-bold">{t("為什麼這份要人工審核", "Why this one needs a person")}</h2>
             <ul className="list-disc pl-5 text-sm">{doc.auto.reasons.map((r) => <li key={r}>{reasonText(r)}</li>)}</ul>
           </div>
         )}
         <div className={cn("mt-3.5 rounded-[10px] px-4 py-3", doubtCells.length + doubtVals.length ? "border border-warn-line bg-warn-bg" : v && !v.unchecked_pages ? "bg-ok-bg text-ok" : "border")}>
-          <h3 className="mb-1 text-[15px] font-bold">{t("第二系統核對", "Second check")}</h3>
+          <h2 className="mb-1 text-[15px] font-bold">{t("第二系統核對", "Second check")}</h2>
           {!v && <p className="text-sm">{doc.auto?.reasons.includes("unknown_sender")
             ? t("這家的這種文件第一次出現，反正每個值都要你看過，所以不跑第二系統，省下核對費用。你確認後，下一份起每個值都會核對。", "The first document of this kind from this sender: you look over every value anyway, so the second system is not run and its cost is saved. From the next one, every value is checked.")
             : t("這份沒有經過第二系統核對，每個值都請你看過。", "This document was not checked by the second system; please look over every value.")}</p>}
@@ -185,7 +185,7 @@ export function Review({ doc, onApproved, onOpen }: {
         </div>
         {probs.length ? (
           <div className="mt-3.5 rounded-[10px] border border-warn-line bg-warn-bg px-4 py-3">
-            <h3 className="mb-1.5 text-[15px] font-bold text-warn">{t(`需要你確認 ${probs.length} 處`, `${probs.length} thing${probs.length === 1 ? "" : "s"} to check`)}</h3>
+            <h2 className="mb-1.5 text-[15px] font-bold text-warn">{t(`需要你確認 ${probs.length} 處`, `${probs.length} thing${probs.length === 1 ? "" : "s"} to check`)}</h2>
             <ol className="list-decimal pl-5">
               {probs.map((p) => (
                 <li key={p.text} className="my-1">{p.text}{t("。", ".")}
@@ -212,13 +212,13 @@ export function Review({ doc, onApproved, onOpen }: {
       ) : (
         // Nothing failed: the mapping is one line, so the header and line items are on the first screen.
         <Card className={cn(SECTION, "flex-row flex-wrap items-center gap-3")}>
-          <h3 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h3>
+          <h2 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h2>
           <span className="text-[13px] text-muted-foreground">{t(`第 ${current + 1} 頁 ${answer[current]!.columns.length} 個印出來的欄位都已對應。`, `All ${answer[current]!.columns.length} printed columns on page ${current + 1} are mapped.`)}</span>
           <Button variant="link" className={LINK} onClick={() => setShowMap(true)}>{t("展開查看或修改", "Show or change")}</Button>
         </Card>
       )}
 
-      <div className="grid items-start gap-4 min-[1101px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 min-[1101px]:grid-cols-[minmax(0,4fr)_minmax(0,7fr)]">
         <Card className={cn(SECTION, "min-[1101px]:sticky min-[1101px]:top-3")}>
           {pageTabs}
           <PageViewer docId={doc.id} pageNos={run.pages.map((p) => p.page_no)} current={current} box={openPage} />
@@ -227,7 +227,7 @@ export function Review({ doc, onApproved, onOpen }: {
 
         <div>
           <Card className={SECTION}>
-            <h3 className="mb-3 text-base font-bold">{t("文件抬頭", "Header")}</h3>
+            <h2 className="mb-3 text-base font-bold">{t("文件抬頭", "Header")}</h2>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-x-5 gap-y-3">
               {Object.entries(L.HEAD).map(([k, name]) => {
                 const nv = norm.header[k];
@@ -252,7 +252,7 @@ export function Review({ doc, onApproved, onOpen }: {
           </Card>
 
           <Card className={SECTION}>
-            <h3 className="mb-3 text-base font-bold">{t("明細", "Line items")}</h3>
+            <h2 className="mb-3 text-base font-bold">{t("明細", "Line items")}</h2>
             <div className="overflow-hidden rounded-lg border">
               <Table className="text-sm">
                 <TableHeader>
@@ -337,7 +337,7 @@ function Totals({ norm, orig, answer, warnKeys, editing, onStart, onDone, onChan
   if (!totals.length) return null;
   return (
     <Card className={SECTION}>
-      <h3 className="mb-3 text-base font-bold">{t("合計", "Totals")}</h3>
+      <h2 className="mb-3 text-base font-bold">{t("合計", "Totals")}</h2>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-x-5 gap-y-3">
         {totals.map(([k, name]) => {
           const nv = norm.totals[k]!;
@@ -368,7 +368,7 @@ function RawEditor({ value, before, label, onChange, onDone, autoFocus = true }:
   const atFocus = useRef(value);
   return (
     <textarea rows={1} aria-label={label} autoFocus={autoFocus} value={value ?? ""}
-      className={cn("raw-edit block min-h-[34px] w-full rounded-md border bg-card px-2 py-1.5 text-sm text-foreground", (value || null) !== (before ?? null) && "bg-edit")}
+      className={cn("raw-edit block min-h-[34px] w-full rounded-md border border-input bg-card px-2 py-1.5 text-sm text-foreground", (value || null) !== (before ?? null) && "bg-edit")}
       onFocus={(e) => { atFocus.current = e.target.value || null; }}
       onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
       // A standalone editor (autoFocus) closes on blur either way; a row cell only re-normalizes when it changed.
@@ -450,7 +450,7 @@ function MapCard({ page: p, current, warnCols, pageTabs, changed, onRewire, chil
   return (
     <Card className={SECTION}>
       <div className="mb-3.5 flex flex-wrap items-baseline gap-3">
-        <h3 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h3>
+        <h2 className="text-base font-bold">{t("欄位對應", "Column mapping")}</h2>
         <span className="text-[13px] text-muted-foreground">{t(`第 ${current + 1} 頁：上面是文件印的欄位和第一列的內容，下面是系統的標準欄位`,
           `Page ${current + 1}: printed columns with the first row's text above, standard fields below`)}</span>
       </div>
@@ -512,7 +512,7 @@ function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
     }
     setBusy(false);
   };
-  const ctl = "rounded-[10px] border bg-card px-2.5 py-[7px] text-foreground";
+  const ctl = "rounded-[10px] border border-input bg-card px-2.5 py-[7px] text-foreground";
   return (
     <details className="mt-3.5 border-t pt-3">
       <summary className="cursor-pointer text-sm font-semibold text-primary">{t("文件上還有一欄沒讀到？", "A printed column was missed?")}</summary>

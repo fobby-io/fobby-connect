@@ -16,7 +16,7 @@ export function Vendors() {
   return (
     <>
       <div className="mb-4">
-        <h2 className="text-xl font-bold">{t("廠商", "Senders")}</h2>
+        <h1 className="text-xl font-bold">{t("廠商", "Senders")}</h1>
         <p className="text-muted-foreground">{t("每家寄件公司各有自己的讀法和紀錄。確認過一份就認得這家；之後每個值都核對通過的文件會自動確認，被改過一次就先暫停。",
           "Each sender has its own reading and record. One approved document and the sender is known; after that, documents whose values all pass are approved automatically, and one corrected afterwards pauses that.")}</p>
       </div>
@@ -40,7 +40,7 @@ function Sender({ s }: { s: SenderInfo }) {
   return (
     <Card className={cn(SECTION, "mb-0")}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="text-lg font-bold">{s.sender}</h3>
+        <h2 className="text-lg font-bold">{s.sender}</h2>
         {s.hold
           ? <Badge className="rounded-full bg-warn-bg text-warn">{t("暫停自動確認", "Automatic approval paused")}</Badge>
           : known ? <Badge className="rounded-full bg-ok-bg text-ok">{t("自動確認中", "Approving automatically")}</Badge>
@@ -57,7 +57,7 @@ function Sender({ s }: { s: SenderInfo }) {
         ))}
       </div>
 
-      <h4 className="mb-1.5 text-sm font-bold">{t("讀法", "Readings")}</h4>
+      <h3 className="mb-1.5 text-sm font-bold">{t("讀法", "Readings")}</h3>
       <ul className="mb-4 list-none p-0">
         {(["PL", "SO"] as const).map((cls) => {
           const vs = s.versions.filter((v) => v.key.endsWith(`/${cls}`)).slice().reverse();
@@ -99,7 +99,7 @@ function Sender({ s }: { s: SenderInfo }) {
       </ul>
 
       <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
-        <h4 className="text-sm font-bold">{t("最近的文件", "Recent documents")}</h4>
+        <h3 className="text-sm font-bold">{t("最近的文件", "Recent documents")}</h3>
         <a href="#/flow" className="text-[13px] text-primary">{t("這家的出口設定 →", "Where this sender's documents go →")}</a>
       </div>
       <ul className="list-none p-0">

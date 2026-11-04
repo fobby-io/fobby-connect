@@ -93,7 +93,7 @@ export function Flow() {
     <>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">{t("出口流程", "Export flow")}</h2>
+          <h1 className="text-xl font-bold">{t("出口流程", "Export flow")}</h1>
           <p className="max-w-[820px] text-muted-foreground">{t("整個團隊一條流程。確認後的資料依寄件公司分支，每家可以接不同出口：Webhook 進自己的系統、Webhook 進別人的系統、Email 或下載。節點可以拖動，點一下設定。",
             "One flow for the team. Approved data branches by sender, and each sender can feed different outputs: a webhook into your own system, a webhook into someone else's, email or download. Drag nodes; click one to set it up.")}</p>
         </div>
@@ -139,7 +139,7 @@ const live = (k: Kind, host: Host) => k !== "email" || host.mail;
 export function DeliveryRow({ d }: { d: Delivery }) {
   return (
     <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b py-1.5 text-[13px] last:border-b-0">
-      <span className={cn("rounded-full px-1.5 font-mono text-[11px]", d.ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}>{d.status ?? (d.ok ? t("已寄出", "sent") : t("沒送到", "failed"))}</span>
+      <span className={cn("rounded-full px-1.5 font-mono text-xs", d.ok ? "bg-ok-bg text-ok" : "bg-warn-bg text-warn")}>{d.status ?? (d.ok ? t("已寄出", "sent") : t("沒送到", "failed"))}</span>
       {d.url.startsWith("mailto:") && <span className="text-muted-foreground">{d.url.slice(7)}</span>}
       <b>{d.name}</b>
       <span className="text-muted-foreground">{d.event}</span>
@@ -209,8 +209,8 @@ function Canvas({ g, host, sel, onSelect, onMove }: { g: Graph; host: Host; sel:
             <span className="flex w-full items-center justify-between gap-2">
               <span className="text-[13px] font-bold">{kindName(n.kind)}</span>
               {OUTPUTS.includes(n.kind) && (live(n.kind, host)
-                ? <span className="rounded-full bg-ok-bg px-1.5 text-[11px] text-ok">{t("可用", "Live")}</span>
-                : <span className="rounded-full bg-muted px-1.5 text-[11px] text-muted-foreground">{t("即將推出", "Coming")}</span>)}
+                ? <span className="rounded-full bg-ok-bg px-1.5 text-xs text-ok">{t("可用", "Live")}</span>
+                : <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground">{t("即將推出", "Coming")}</span>)}
             </span>
             <span className="w-full truncate text-xs text-muted-foreground">{sub(n, host)}</span>
           </button>
@@ -235,7 +235,7 @@ function Inspector({ g, host, node, secret, onPatch, onRemove, onAutoSend }: {
       {node && (
         <>
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-base font-bold">{kindName(node.kind)}</h3>
+            <h2 className="text-base font-bold">{kindName(node.kind)}</h2>
             {OUTPUTS.includes(node.kind) && !live(node.kind, host) && <Badge variant="secondary" className="rounded-full">{t("這個伺服器沒有設定寄信", "No mail set up on this server")}</Badge>}
           </div>
           {node.kind === "branch" && <p className="text-sm">{node.sender === OTHER ? t("沒有自己分支的廠商都走這裡。", "Senders without their own branch go here.") : t(`寄件公司是 ${node.sender} 的文件走這條。`, `Documents from ${node.sender} go this way.`)}</p>}
@@ -262,7 +262,7 @@ function Inspector({ g, host, node, secret, onPatch, onRemove, onAutoSend }: {
           {!OUTPUTS.includes(node.kind) && node.kind !== "branch" && <p className="text-sm text-muted-foreground">{sub(node, host)}</p>}
           {OUTPUTS.includes(node.kind) && (
             <>
-              <h4 className="mt-2 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h4>
+              <h3 className="mt-2 mb-1 text-sm font-bold">{t("送出紀錄", "Deliveries")}</h3>
               <p className="mb-3 text-[13px] text-muted-foreground">{node.kind === "download" ? t("下載不留紀錄。", "Downloads are not logged.") : node.kind === "webhook" ? t("每份文件送出的狀態碼和收據編號，列在那份文件的頁面上。", "Each document's status codes and receipt ids are listed on its page.") : t("每份文件寄出的紀錄，列在那份文件的頁面上。", "Each document's sends are listed on its page.")}</p>
               <Button size="sm" variant="outline" className="self-start" onClick={() => onRemove(node.id)}>{t("移除這個出口", "Remove this output")}</Button>
             </>
