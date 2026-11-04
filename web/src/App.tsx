@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, creditText, errorMessage, isCreditExhausted, request, type Doc, type Profile, type Sample } from "./api.ts";
-import { FobbyWordmark } from "./brand.tsx";
+import { FobbyLogo } from "./brand.tsx";
 import { Badge } from "./components/ui/badge.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
@@ -67,7 +67,7 @@ export function App() {
     <>
       <header className="flex flex-wrap items-center gap-6 border-b bg-card px-6 py-3.5">
         <h1 className="m-0 flex items-center gap-2 text-[17px] font-bold">
-          <a href="https://fobby.io" className="flex items-center text-foreground" aria-label="fobby.io"><FobbyWordmark className="h-[22px] w-auto" /></a>
+          <FobbyLogo />
           <span className="text-primary">Connect</span>
         </h1>
         <ol className="steps m-0 flex list-none flex-wrap gap-1.5 p-0">
