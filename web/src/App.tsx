@@ -174,8 +174,8 @@ function Export({ doc }: { doc: Doc }) {
       <h3 className="mb-3 text-base font-bold">匯出</h3>
       {doc.approved?.approved_at ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild><a href={`${base}.csv`} download>下載 CSV</a></Button>
-          <Button asChild variant="outline"><a href={`${base}.json`} download>下載 JSON</a></Button>
+          <Button asChild><a href={`${base}.json`} download>完整資料（JSON）</a></Button>
+          <Button asChild variant="outline"><a href={`${base}.csv`} download>Excel 表格（只有明細，CSV）</a></Button>
           <Button variant="outline" onClick={copyUrl}>複製 API 網址</Button>
           <span role="status" className="text-sm text-muted-foreground">
             {copy === "done" && "已複製"}

@@ -13,6 +13,7 @@ Live demo: https://connect.fobby.io (open a sample shipment, or upload your own 
 3. **Normalize (code, no model).** Printed text becomes typed values (dates, ports as UN/LOCODE, weights in kg, ranges, PO and part numbers filled down), and every value keeps its raw text.
 4. **Review.** The clerk sees the page next to the result, wires printed columns to standard fields, adds a column the read missed (one page re-read, only the new column merged), edits raw text and sees the checks re-run.
 5. **Learn.** On approval, the correction becomes a candidate prompt for that sender. It is activated only if replaying the sender's approved documents shows no regression; otherwise the field is marked "always review".
+6. **Export.** An approved document is available at `GET /api/documents/<id>/export.json` (the full record: header, containers, line items and totals with raw text, the check results, a link to the PDF, how much was corrected; `schema_version: 1`) and `GET /api/documents/<id>/export.csv` (one line item per row for Excel; UTF-8 with BOM). Unapproved documents answer 409.
 
 ## Run it yourself
 

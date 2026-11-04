@@ -1,6 +1,7 @@
 // Approved documents as CSV (for Excel) and JSON (for programs). Pure functions: app.ts checks approval first.
 import { normalize, type NormDoc, type NormRow } from "../normalize/normalize.ts";
 import type { Page } from "../profiles/loop.ts";
+import { checkDocument, type Finding } from "../rules/checks.ts";
 import { HEADER_KEYS } from "../shared/fields.ts";
 import type { Saved } from "./app.ts";
 
@@ -14,16 +15,22 @@ type Container = { page: number; number: string | null; iso_type: string | null;
 export type ExportV1 = {
   schema_version: 1; id: string; name: string; doc_type: string | null; sender: string; approved_at: string;
   header: NormDoc["header"]; containers: Container[]; rows: Omit<NormRow, "box">[]; totals: NormDoc["totals"];
+  // The receiver sees where the data came from, which checks still fail and how much a person changed.
+  source: { file: string; pages: number }; checks: Finding[]; review: { corrected: number; prompt_version: number | null };
 };
 
 export function exportJson(d: Exportable): ExportV1 {
-  const n = normalize(d.approved.answer);
-  const containers = d.approved.answer.flatMap((p, i) => p.containers.map((c) => ({
+  const answer = d.approved.answer;
+  const n = normalize(answer);
+  const containers = answer.flatMap((p, i) => p.containers.map((c) => ({
     page: i + 1, number: c.number?.v ?? null, iso_type: c.iso_type?.v ?? null, seal: c.seal?.v ?? null, qty: c.qty?.v ?? null,
   })));
   return {
     schema_version: 1, id: d.id, name: d.name, doc_type: d.run.cls, sender: d.approved.sender, approved_at: d.approved.approved_at,
     header: n.header, containers, rows: n.rows.map(({ box: _, ...r }) => r), totals: n.totals,
+    source: { file: `/api/documents/${d.id}/file`, pages: answer.length },
+    checks: checkDocument(answer),
+    review: { corrected: d.approved.corrected, prompt_version: d.run.prompt?.version ?? null },
   };
 }
 

@@ -74,6 +74,10 @@ describe("exportJson", () => {
     expect("box" in j.rows[0]!).toBe(false);
     expect(j.containers).toEqual([{ page: 1, number: "MSKU1234565", iso_type: "45G1", seal: null, qty: null }]);
     expect(j.totals.total_pkgs!.v).toBe("8");
+    expect(j.source).toEqual({ file: "/api/documents/d1/file", pages: 1 });
+    // 5 + 3 packages against a printed total of 8: the approved answer passes the totals check.
+    expect(j.checks.filter((f) => f.path.startsWith("totals"))).toEqual([]);
+    expect(j.review).toEqual({ corrected: 1, prompt_version: null });
     expect(JSON.stringify(exportJson(doc([page("5")])))).toBe(JSON.stringify(j));
   });
 });
