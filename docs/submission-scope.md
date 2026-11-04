@@ -13,6 +13,7 @@ Meta Global AI Developer Hackathon, Startups track, problem statement "Build for
 | Checks across rows, totals, pages and containers | `src/rules/` |
 | Second check of every value against the page text or the page image, and automatic approval | `src/verify/`, `src/server/app.ts` |
 | Review API for any JS host (Node server included); export flow with signed webhooks, retries and email; email intake | `src/server/` |
+| Postgres storage (Drizzle): documents, reading versions, approved examples, daily limit and model calls; schema and move from JSON files | `src/server/db.ts`, `drizzle/`, `scripts/` |
 | Review screen (React, shadcn/ui, pdf.js) | `web/` |
 | Synthetic document generator, evaluation and samples | `eval/`, `scripts/` |
 

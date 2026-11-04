@@ -17,6 +17,14 @@ private-samples/
 /*_report_r2.md
 /concepts_brief.md
 .impeccable/
+# The author's coding-agent setup stays local
+/.cto.json
+/.cto-lessons.jsonl
+/.agents/
+/.claude/
+/.codex/
+/AGENTS.md
+/CLAUDE.md
 # >>> YOUR CTO JEV START >>>
 /docs
 .cto-brain.json

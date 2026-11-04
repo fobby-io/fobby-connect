@@ -36,6 +36,8 @@ npx -y pnpm@12.16.1 build:web
 npx tsx src/server/local.ts      # http://localhost:8787
 ```
 
+Documents, reading versions, approved examples, the daily limit and every model call are kept in Postgres; PDFs and read results are files under `DATA_DIR`. Without `DATABASE_URL` in `.dev.vars` the server runs an embedded Postgres (PGlite) in `data/pg`; with it (a direct connection URL) it uses that database. Either way the schema is applied on start; for another host, `npx tsx scripts/migrate.ts` applies it. Data kept as JSON files by an earlier version moves in with `npx tsx scripts/migrate-storage.ts` (add `--apply` to write; safe to run again).
+
 Tests: `npx tsc --noEmit && npx vitest run`. Sample PDFs: `npx tsx scripts/build-samples.ts`.
 
 ## Meta models used
@@ -60,6 +62,7 @@ Everything in this repository was written between 2026-10-27 and 2026-11-04 (see
 | Checks across rows, totals, pages and containers | `src/rules/` |
 | Second check of every value against the page text or the page image, and automatic approval | `src/verify/`, `src/server/app.ts` |
 | Review API for any JS host (Node server included); export flow with signed webhooks, retries and email; email intake | `src/server/` |
+| Postgres storage (Drizzle): documents, reading versions, approved examples, daily limit and model calls; schema and move from JSON files | `src/server/db.ts`, `drizzle/`, `scripts/` |
 | Review screen (React, shadcn/ui, pdf.js) | `web/` |
 | Synthetic document generator, evaluation and samples | `eval/`, `scripts/` |
 
