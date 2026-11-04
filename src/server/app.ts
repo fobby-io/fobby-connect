@@ -1,6 +1,8 @@
 // The review API. src/server/local.ts serves it with Node; any other host serves it the same way.
 // No Node built-ins here: files, the Meta client and sending email come in as deps.
+import { PDFDocument } from "pdf-lib";
 import PostalMime from "postal-mime";
+import { z } from "zod";
 import { CreditExhausted, creditGuard } from "../gateway/credit.ts";
 import { gateway } from "../gateway/gateway.ts";
 import { memoryLedger } from "../gateway/ledger.ts";
@@ -49,6 +51,7 @@ const MAX_ATTACHMENTS = 5;
 const enc = new TextEncoder(), dec = new TextDecoder();
 const toJson = (x: unknown) => enc.encode(JSON.stringify(x));
 const fail = (status: number, code: string, message: string) => Object.assign(new Error(message), { status, code });
+const badAnswer = () => fail(400, "bad_answer", "送出的資料格式不對。");
 const json = (status: number, x: unknown) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json" } });
 const download = (body: string, type: string, filename: string) =>
   new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "content-disposition": `attachment; filename="${filename}"` } });
@@ -231,11 +234,16 @@ export function createApp(deps: Deps) {
 
   // A new PDF, uploaded or attached to an email: kept, read page by page, then through intake.
   async function ingest(bytes: Uint8Array, name: string, sender: string | null, source?: Saved["source"]) {
+    // Refused before anything is stored, so a wrong or oversized file leaves nothing behind.
+    if (dec.decode(bytes.subarray(0, 5)) !== "%PDF-") throw fail(400, "not_pdf", "這不是 PDF 檔。");
+    // pdf-lib opens some broken files and only fails when counting their pages.
+    const count = await PDFDocument.load(bytes, { ignoreEncryption: true }).then((p) => p.getPageCount()).catch(() => 0);
+    if (count < 1) throw fail(400, "not_pdf", "這個 PDF 打不開，可能已損壞。");
+    // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
+    if (count > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${count} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
     const id = newId();
     await files.put(`runs/${id}.pdf`, bytes);
     const pages = await preparePages(bytes);
-    // Every page is a paid read and anyone can upload: one document is at most what the billing unit covers twice.
-    if (pages.length > MAX_PAGES) throw fail(400, "too_many_pages", `這份文件有 ${pages.length} 頁，示範版一次最多讀 ${MAX_PAGES} 頁。`);
     const run = await withStore((s) => runDocument(g, s, pages, { doc_id: id, sender }));
     const d: Saved = { id, name: name || id, run, pages, ...(source && { source }) };
     await intake(d);
@@ -257,7 +265,6 @@ export function createApp(deps: Deps) {
       try {
         const bytes = new Uint8Array(a.content as ArrayBuffer);
         if (bytes.length > MAX_UPLOAD) throw fail(413, "too_large", "file over 25 MB");
-        if (dec.decode(bytes.subarray(0, 5)) !== "%PDF-") throw fail(400, "not_pdf", "not a PDF");
         documents.push({ name, id: (await ingest(bytes, name, null, { via: "email", from, subject })).id });
       } catch (e) {
         documents.push({ name, error: (e as Error).message });
@@ -275,7 +282,9 @@ export function createApp(deps: Deps) {
       if (b.length > MAX_UPLOAD) throw fail(413, "too_large", "file over 25 MB");
       return b;
     };
-    const bodyJson = async <T>() => JSON.parse(dec.decode(await body())) as T;
+    // A body that is not JSON, or answer pages not in the schema, is the caller's mistake: 400, not 500.
+    const bodyJson = async <T>() => { try { return JSON.parse(dec.decode(await body())) as T; } catch (e) { throw e instanceof SyntaxError ? badAnswer() : e; } };
+    const pagesOf = (x: unknown) => { const r = z.array(schemas.compact).safeParse(x); if (!r.success) throw badAnswer(); return r.data; };
     let m: RegExpMatchArray | null;
 
     if (req.method === "POST" && path === "/api/documents") {
@@ -325,7 +334,7 @@ export function createApp(deps: Deps) {
     }
     // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.
     if (req.method === "POST" && path === "/api/normalize") {
-      const answer = (await bodyJson<{ answer: unknown[] }>()).answer.map((p) => schemas.compact.parse(p));
+      const answer = pagesOf((await bodyJson<{ answer?: unknown }>())?.answer);
       return json(200, { normalized: normalize(answer), findings: checkDocument(answer) });
     }
     // A printed column the read left out: re-read that one page with the column named.
@@ -344,11 +353,11 @@ export function createApp(deps: Deps) {
       const d = await load(m[1]!);
       // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
       if (d.approved) return json(200, { corrected: d.approved.corrected, learn: d.approved.learn, approved_at: d.approved.approved_at, spent: spent() });
-      const b = await bodyJson<{ sender: string; answer: Page[] }>();
-      const sender = (b.sender ?? "").trim().toUpperCase();
+      const b = (await bodyJson<{ sender?: unknown; answer?: unknown }>()) ?? {};
+      const sender = String(b.sender ?? "").trim().toUpperCase();
       if (!sender) throw fail(400, "sender_required", "Name the sender before approving.");
       // The answer comes from the browser: validate it against the same schema the model output passed.
-      const answer = b.answer.map((p) => schemas.compact.parse(p));
+      const answer = pagesOf(b.answer);
       const a = await approveDoc(d, sender, answer);
       // A sender on hold earns automatic approval back with a document a person approved without any correction.
       if (a.corrected === 0) await setHold(sender, false);
@@ -403,8 +412,7 @@ export function createApp(deps: Deps) {
       try {
         return await handle(req);
       } catch (e) {
-        if (e instanceof CreditExhausted) return json(402, { error: { code: "credit_exhausted", message: "示範額度已用完，請打開範例貨件。" } });
-        const x = e as { status?: number; code?: string; message: string };
+        if (e instanceof CreditExhausted) return json(402, { error: { code: "credit_exhausted", message: "示範額度已用完，請打開範例貨件。" } });        const x = e as { status?: number; code?: string; message: string };
         // A network failure carries status 0 and Meta's own 429/503 are not this API's answer: anything else is a 500.
         const status = x.status && x.status >= 400 && x.status < 500 && x.code ? x.status : 500;
         return json(status, { error: { code: x.code ?? "failed", message: x.message } });

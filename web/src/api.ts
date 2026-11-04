@@ -79,6 +79,8 @@ const MESSAGES: Record<string, [zh: string, en: string]> = {
   credit_exhausted: ["示範額度已用完，請打開範例貨件", "The demo credit is used up. Open a sample shipment instead."],
   too_many_pages: ["這份文件超過 20 頁，示範版一次最多讀 20 頁。", "This document has more than 20 pages; the demo reads at most 20 per upload."],
   too_large: ["檔案超過 25 MB。", "The file is over 25 MB."],
+  not_pdf: ["這不是 PDF 檔，或 PDF 已損壞，打不開。", "This is not a PDF, or the PDF is broken and cannot be opened."],
+  bad_answer: ["送出的資料格式不對，請重新整理頁面再試一次。", "The data sent was not in the expected form. Reload the page and try again."],
   bad_column: ["請填文件上印的欄名，並選它是哪個欄位。", "Name the printed column and pick what it is."],
   still_missing: ["重讀後還是沒有這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。", "The re-read still has no such column, or its rows do not line up. Check the name matches what is printed."],
   sender_required: ["請先填寄件公司再確認。", "Name the sender before approving."],

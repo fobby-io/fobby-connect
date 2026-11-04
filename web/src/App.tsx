@@ -75,7 +75,7 @@ export function App() {
   else if (route.area === "flow") body = <Flow />;
   else if (screen?.kind === "busy") body = <><Steps at={screen.step} /><Busy title={screen.title}>{screen.text}</Busy></>;
   else if (screen?.kind === "failed")
-    body = <Busy title={screen.title}><ErrorText error={screen.error} onOpen={show} /><div className="mt-4"><Button variant="outline" onClick={() => go("")}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
+    body = <Busy title={screen.title}><ErrorText error={screen.error} onOpen={show} /><div className="mt-4"><Button variant="outline" onClick={() => { go(""); setRoute({ area: "docs" }); }}>{t("回到文件清單", "Back to documents")}</Button></div></Busy>;
   else if (screen?.kind === "review") body = <><Steps at={3} doc={screen.doc} /><Review key={screen.doc.id} doc={screen.doc} onOpen={show} onApproved={show} /></>;
   else if (screen?.kind === "result") body = <><Steps at={5} doc={screen.doc} /><Result key={screen.doc.id} doc={screen.doc} onReopened={show} /></>;
 

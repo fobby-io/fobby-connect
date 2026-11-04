@@ -120,15 +120,43 @@ describe("createApp", () => {
     expect((await r.json()).error.code).toBe("credit_exhausted");
   });
 
-  it("refuses a document over 20 pages before any read", async () => {
+  it("refuses a document over 20 pages before any read, and keeps nothing", async () => {
     const c = reads();
-    const { app } = setup(c);
+    const { app, store } = setup(c);
     const d = await PDFDocument.create();
     for (let i = 0; i < 21; i++) d.addPage();
     const r = await call(app, "/api/documents", { method: "POST", body: (await d.save()).slice() });
     expect(r.status).toBe(400);
     expect((await r.json()).error.code).toBe("too_many_pages");
     expect(c).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
+  });
+
+  it("refuses a file that is not a PDF, or a broken one, before keeping it", async () => {
+    const c = reads();
+    const { app, store } = setup(c);
+    for (const body of [new TextEncoder().encode("hello"), new TextEncoder().encode("%PDF-1.7 broken")]) {
+      const r = await call(app, "/api/documents", { method: "POST", body });
+      expect(r.status).toBe(400);
+      expect((await r.json()).error.code).toBe("not_pdf");
+    }
+    expect(c).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
+  });
+
+  it("answers 400 bad_answer to approve and normalize bodies that are not JSON or not answer pages", async () => {
+    const { app } = setup(reads());
+    const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();
+    const bad = [
+      [`/api/documents/${doc.id}/approve`, "not json"], [`/api/documents/${doc.id}/approve`, JSON.stringify({ sender: "acme" })],
+      [`/api/documents/${doc.id}/approve`, JSON.stringify({ sender: "acme", answer: [{ rows: 1 }] })],
+      ["/api/normalize", "{"], ["/api/normalize", JSON.stringify({ answer: "x" })], ["/api/normalize", "null"],
+    ];
+    for (const [path, body] of bad) {
+      const r = await call(app, path!, { method: "POST", headers: { "content-type": "application/json" }, body });
+      expect([path, r.status, (await r.json()).error.code]).toEqual([path, 400, "bad_answer"]);
+    }
+    expect((await (await call(app, `/api/documents/${doc.id}`)).json()).approved).toBeNull();
   });
 
   it("answers a network failure as a JSON 500, and never sends the prompt's examples", async () => {
@@ -166,7 +194,7 @@ describe("email", () => {
     const { app } = setup(reads());
     const r = await app.receiveEmail(await mime(), "sales@acme.test");
     expect(r.subject).toBe("PL 1234");
-    expect(r.documents).toEqual([{ name: "pl-1234.pdf", id: expect.any(String) }, { name: "fake.pdf", error: "not a PDF" }]);
+    expect(r.documents).toEqual([{ name: "pl-1234.pdf", id: expect.any(String) }, { name: "fake.pdf", error: "這不是 PDF 檔。" }]);
     const doc = await (await call(app, `/api/documents/${r.documents[0]!.id}`)).json();
     expect(doc.name).toBe("pl-1234.pdf");
     expect(doc.source).toEqual({ via: "email", from: "sales@acme.test", subject: "PL 1234" });
