@@ -136,16 +136,21 @@ export function Busy({ title, children }: { title: string; children?: ReactNode 
 // Every API error is shown; running out of demo credit points at the samples, which cost nothing.
 export function ErrorText({ error, onOpen }: { error: unknown; onOpen: (d: Doc) => void }) {
   useLang();
-  if (isCreditExhausted(error)) return <div><p className="mb-3">{creditText()}</p><Samples onOpen={onOpen} /></div>;
+  if (isCreditExhausted(error)) return <div><p className="mb-3">{creditText()}</p><Samples onOpen={onOpen} lead={SAMPLE_LEAD()} /></div>;
   return <span>{errorMessage(error)}</span>;
 }
 
-export function Samples({ onOpen }: { onOpen: (d: Doc) => void }) {
+export const SAMPLE_LEAD = () => t("可以先打開已經讀好的範例貨件：", "You can open a sample shipment, already read, instead:");
+
+/** Sample shipments are demo data a host may or may not carry; with none, this shows nothing. */
+export function Samples({ onOpen, given, lead }: { onOpen: (d: Doc) => void; given?: Sample[]; lead?: string }) {
   useLang();
-  const [list, setList] = useState<Sample[] | null>(null);
+  const [fetched, setList] = useState<Sample[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [opening, setOpening] = useState<string | null>(null);
-  useEffect(() => { api<Sample[]>("/api/samples").then(setList, setError); }, []);
+  useEffect(() => { if (!given) api<Sample[]>("/api/samples").then(setList, () => setList([])); }, [given]);
+  const list = given ?? fetched;
+  if (!list?.length) return null;
   const open = async (s: Sample) => {
     setOpening(s.id);
     setError(null);
@@ -158,9 +163,9 @@ export function Samples({ onOpen }: { onOpen: (d: Doc) => void }) {
   };
   return (
     <div className="text-left">
-      {list && !list.length && <p className="text-sm text-muted-foreground">{t("目前沒有範例貨件。", "No sample shipments yet.")}</p>}
+      {lead && <p className="mb-2">{lead}</p>}
       <ul className="m-0 grid list-none gap-2 p-0">
-        {list?.map((s) => (
+        {list.map((s) => (
           <li key={s.id}>
             <button type="button" disabled={!!opening} onClick={() => open(s)} aria-busy={opening === s.id}
               className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-white/70 px-3 py-2.5 text-left text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60">
@@ -232,8 +237,10 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState<"all" | "review" | "done">("all");
   const [intake, setIntake] = useState<string | null>(null);
+  const [samples, setSamples] = useState<Sample[]>([]);
   useEffect(() => {
     api<ListedDoc[]>("/api/documents").then(setList, setError);
+    api<Sample[]>("/api/samples").then(setSamples, () => setSamples([]));
     api<{ intake: string | null }>("/api/flow").then((f) => setIntake(f.intake), () => setIntake(null));
   }, []);
   const toReview = list?.filter((d) => d.status === "review") ?? [];
@@ -246,7 +253,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
 
   return (
     <div className="mx-auto grid max-w-[80rem] grid-cols-[minmax(0,1fr)] gap-5">
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+      <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-5", samples.length ? "min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]" : "min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]")}>
         <Card className={panel}>
           <div className="mb-3 flex items-center gap-2">
             <Icon d={ICON.inbox} />
@@ -296,15 +303,18 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           </p>
         </section>
 
-        <Card className={panel}>
-          <div className="mb-1 flex items-center gap-2">
-            <Icon d={ICON.spark} />
-            <h2 className="text-base font-semibold">{t("範例貨件", "Try a sample")}</h2>
-          </div>
-          <p className="mb-3 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開兩次，第二次就會自動確認。",
-            "Already read; you open a copy. Open the same sender twice and the second is approved without a person.")}</p>
-          <Samples onOpen={onOpen} />
-        </Card>
+        {/* Only a demo host carries samples; a team's own site shows its documents and nothing else. */}
+        {samples.length > 0 && (
+          <Card className={panel}>
+            <div className="mb-1 flex items-center gap-2">
+              <Icon d={ICON.spark} />
+              <h2 className="text-base font-semibold">{t("範例貨件", "Sample shipments")}</h2>
+            </div>
+            <p className="mb-3 text-[13px] text-muted-foreground">{t("手邊沒有 PDF？打開一份，拿到的是複本。確認之後再打開同一份，第二份就會自動確認。",
+              "No PDF at hand? Open one; you get a copy. Approve it, then open the same one again: the second is approved without a person.")}</p>
+            <Samples onOpen={onOpen} given={samples} />
+          </Card>
+        )}
       </div>
 
       <Card className="gap-0 px-5 pt-4 pb-2">
@@ -328,7 +338,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           {!list && error == null && <p className="py-6 text-muted-foreground">{t("載入中…", "Loading…")}</p>}
           {list && !shown.length && (
             <p className="border-t py-8 text-center text-muted-foreground">
-              {!list.length ? t("還沒有文件。上傳一份 PDF，或打開右邊的範例。", "No documents yet. Upload a PDF, or open a sample.")
+              {!list.length ? t("還沒有文件。上傳一份 PDF 就會出現在這裡。", "No documents yet. Upload a PDF and it shows up here.")
                 : filter === "review" ? t("沒有要審核的文件。", "Nothing is waiting for review.") : t("還沒有確認過的文件。", "Nothing approved yet.")}
             </p>
           )}
@@ -409,7 +419,7 @@ function Export({ doc }: { doc: Doc }) {
           </span>
         </div>
       ) : (
-        <p className="text-muted-foreground">{t("這份在匯出功能上線前核准，沒有存下核准內容。重新打開範例再核准一次即可匯出。", "This document was approved before export existed, so its approved content was not stored. Open the sample again and approve it once more to export.")}</p>
+        <p className="text-muted-foreground">{t("這份在匯出功能上線前核准，沒有存下核准內容。重新上傳再核准一次即可匯出。", "This document was approved before export existed, so its approved content was not stored. Upload it again and approve it once more to export.")}</p>
       )}
       {deliveries.length > 0 && (
         <>

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import * as pdfjs from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { creditText, errorMessage, isCreditExhausted, PASS, post, reasonText, request, WRONG, type Doc, type NormDoc } from "./api.ts";
-import { Busy, ErrorText, Samples, ViaEmail } from "./App.tsx";
+import { Busy, ErrorText, SAMPLE_LEAD, Samples, ViaEmail } from "./App.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Card } from "./components/ui/card.tsx";
 import { Input } from "./components/ui/input.tsx";
@@ -508,7 +508,7 @@ function MissingColumn({ docId, page, answerPage, onRead, onOpen }: {
       setMsg(null);
       onRead(j.output);
     } catch (e) {
-      setMsg(isCreditExhausted(e) ? <span className="block w-full">{creditText()}<span className="mt-2 block"><Samples onOpen={onOpen} /></span></span> : errorMessage(e));
+      setMsg(isCreditExhausted(e) ? <span className="block w-full">{creditText()}<span className="mt-2 block"><Samples onOpen={onOpen} lead={SAMPLE_LEAD()} /></span></span> : errorMessage(e));
     }
     setBusy(false);
   };

@@ -72,7 +72,7 @@ export const post = <T>(path: string, body: unknown) =>
   api<T>(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
 export const isCreditExhausted = (e: unknown) => e instanceof ApiError && e.code === "credit_exhausted";
-export const creditText = () => t("示範額度暫時用完了（每天有讀取上限），請先打開範例貨件。", "The demo credit is used up for now (reads are capped per day). Open a sample shipment instead.");
+export const creditText = () => t("讀取額度暫時用完了（每天有讀取上限）。", "The read credit is used up for now (reads are capped per day).");
 
 // The server writes its messages in Chinese; known codes get both languages here, anything else shows the server's text.
 const MESSAGES: Record<string, [zh: string, en: string]> = {
