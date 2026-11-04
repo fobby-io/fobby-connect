@@ -49,8 +49,10 @@ const instructionsFor = (s: Store, v: PromptVersion | null) => {
 /** Page 1's issuer names a known sender when it contains the sender's name; the clerk can always override. */
 export function matchSender(issuer: string | null, senders: string[]): string | null {
   if (!issuer) return null;
-  const i = norm(issuer);
-  return senders.find((s) => i.includes(norm(s))) ?? null;
+  // Punctuation is ignored ("B.V." is the sender "BV"), and the longest name wins ("ACME TRADING" over "ACME").
+  const key = (s: string) => norm(s).replace(/[^\p{L}\p{N} ]/gu, "").replace(/ +/g, " ").trim();
+  const i = key(issuer);
+  return senders.filter((s) => key(s) && i.includes(key(s))).sort((a, b) => key(b).length - key(a).length)[0] ?? null;
 }
 
 export type RunResult = {

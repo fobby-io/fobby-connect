@@ -73,6 +73,11 @@ describe("runDocument", () => {
     expect(matchSender("ACME CORP.\n1 Road", ["ACME", "BOLT"])).toBe("ACME");
     expect(matchSender("OTHER LTD", ["ACME"])).toBe(null);
   });
+
+  it("matches a sender whatever the punctuation, and prefers the longest name", () => {
+    expect(matchSender("LUMEN ELECTRIC B.V.\nROTTERDAM", ["LUMEN ELECTRIC BV"])).toBe("LUMEN ELECTRIC BV");
+    expect(matchSender("LUMEN ELECTRIC B.V.", ["LUMEN ELECTRIC", "LUMEN ELECTRIC BV"])).toBe("LUMEN ELECTRIC BV");
+  });
 });
 
 describe("mergeColumns", () => {

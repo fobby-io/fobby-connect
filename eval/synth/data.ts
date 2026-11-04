@@ -28,9 +28,16 @@ export const PORTS = {
 
 const VESSELS = ["EVER LUMEN", "OCEAN KESTREL", "HARBOR STAR", "PACIFIC ORCHID", "NORTHERN TIDE", "SILVER GRANITE"];
 
+// A company's legal form matches its country (no GmbH in Taiwan): a second checker rightly doubts a mismatch.
+const FORMS: Record<string, string[]> = {
+  Taiwan: ["Co., Ltd.", "Corp.", "Ltd."], USA: ["Inc.", "LLC", "Corp."], Netherlands: ["B.V."], Malaysia: ["Sdn. Bhd."], Germany: ["GmbH"],
+};
+
 export function company(r: Rng) {
-  const name = `${r.pick(NAME_A)} ${r.pick(NAME_B)} ${r.pick(SUFFIX)}`.toUpperCase();
-  return { name, address: [r.pick(STREETS), r.pick(CITIES)].map((s) => s.toUpperCase()) };
+  const [a, b, form, street, city] = [r.pick(NAME_A), r.pick(NAME_B), r.pick(SUFFIX), r.pick(STREETS), r.pick(CITIES)];
+  const forms = FORMS[city.split(", ").at(-1)!]!;
+  const name = `${a} ${b} ${forms.includes(form) ? form : forms[0]}`.toUpperCase();
+  return { name, address: [street, city].map((s) => s.toUpperCase()) };
 }
 
 export function zhCompany(r: Rng) {
