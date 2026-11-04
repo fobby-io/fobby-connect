@@ -29,7 +29,7 @@ type Screen =
   | { kind: "review"; doc: Doc }
   | { kind: "result"; doc: Doc };
 
-export const SECTION = "mb-4 gap-0 rounded-2xl p-[18px] shadow-none";
+export const SECTION = "mb-4 gap-0 rounded-2xl p-[18px]";
 
 export function App() {
   useLang();
@@ -83,12 +83,13 @@ export function App() {
   const nav: [string, string, string][] = [["docs", "#", t("文件", "Documents")], ["vendors", "#/vendors", t("廠商", "Senders")], ["flow", "#/flow", t("出口流程", "Export flow")]];
   return (
     <>
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b bg-card px-6 py-3">
-        <a href="#" className="m-0 flex items-center text-[17px] font-bold no-underline" aria-label={t("Fobby Connect 文件清單", "Fobby Connect documents")}><FobbyLogo /></a>
-        <nav className="flex gap-1" aria-label={t("主選單", "Main")}>
+      <header className="sticky top-0 z-20 flex flex-wrap items-stretch gap-x-8 border-b border-white/70 bg-white/70 px-6 backdrop-blur-xl">
+        <a href="#" className="m-0 flex items-center py-3 text-[17px] font-bold no-underline" aria-label={t("Fobby Connect 文件清單", "Fobby Connect documents")}><FobbyLogo /></a>
+        <nav className="flex gap-6" aria-label={t("主選單", "Main")}>
           {nav.map(([k, href, name]) => (
             <a key={k} href={href} aria-current={area === k ? "page" : undefined}
-              className={cn("rounded-md px-3 py-1.5 text-sm text-muted-foreground no-underline hover:bg-muted hover:text-foreground", area === k && "bg-muted font-semibold text-foreground")}>{name}</a>
+              className={cn("flex items-center border-b-2 border-transparent pt-0.5 text-sm text-muted-foreground no-underline transition-colors hover:text-foreground",
+                area === k && "border-primary font-semibold text-primary hover:text-primary")}>{name}</a>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-3">
@@ -162,7 +163,8 @@ export function Samples({ onOpen }: { onOpen: (d: Doc) => void }) {
         {list?.map((s) => (
           <li key={s.id}>
             <button type="button" disabled={!!opening} onClick={() => open(s)} aria-busy={opening === s.id}
-              className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-transparent px-3.5 py-2.5 text-left text-foreground transition-colors hover:border-primary hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60">
+              className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-white/70 px-3 py-2.5 text-left text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60">
+              <DocIcon so={/shipping order/i.test(s.name)} />
               <span className="min-w-0 flex-1">
                 <span className="block font-medium">{s.name}</span>
                 <span className="block truncate text-[13px] text-muted-foreground">{opening === s.id ? t("讀取並核對中…", "Opening and checking…") : s.sender}</span>
@@ -179,11 +181,31 @@ export function Samples({ onOpen }: { onOpen: (d: Doc) => void }) {
 }
 
 export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
-  // fobby's tags: ink on a blue step; the step says how much it needs a person, the word says what it is.
-  const tag = "rounded-full border-0 px-2 py-0.5 text-xs font-medium text-foreground";
-  if (d.status === "auto") return <Badge className={cn(tag, "bg-accent")}>{t("自動確認", "Auto-approved")}</Badge>;
-  if (d.status === "approved") return <Badge className={cn(tag, "bg-ok-bg")}>{t("已確認", "Approved")}</Badge>;
-  return <Badge className={cn(tag, "bg-warn-bg")}>{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
+  // The dot carries the colour so the word stays readable; amber waits for a person, green is done, blue was done without one.
+  const tag = "gap-1.5 rounded-full border-0 px-2.5 py-0.5 text-xs font-medium before:size-1.5 before:rounded-full before:bg-current before:content-['']";
+  if (d.status === "auto") return <Badge className={cn(tag, "bg-accent text-primary")}>{t("自動確認", "Auto-approved")}</Badge>;
+  if (d.status === "approved") return <Badge className={cn(tag, "bg-ok-bg text-ok")}>{t("已確認", "Approved")}</Badge>;
+  return <Badge className={cn(tag, "bg-warn-bg text-warn")}>{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
+};
+
+/** A document tile: blue for a packing list, green for a shipping order. */
+export const DocIcon = ({ so }: { so?: boolean }) => (
+  <span aria-hidden="true" className={cn("grid size-9 flex-none place-items-center rounded-lg", so ? "bg-ok-bg text-ok" : "bg-accent text-primary")}>
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" />
+    </svg>
+  </span>
+);
+
+const Icon = ({ d, className = "text-primary" }: { d: string; className?: string }) => (
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={cn("flex-none", className)}><path d={d} /></svg>
+);
+const ICON = {
+  inbox: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  spark: "M13 2 4 14h7l-1 8 9-12h-7z",
+  clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
+  upload: "M12 16V4M7 9l5-5 5 5M5 20h14",
+  chevron: "m9 6 6 6-6 6",
 };
 
 // GitHub's mark, from Octicons (MIT).
@@ -219,28 +241,78 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
   const filters = [["all", t("全部", "All"), list?.length ?? 0], ["review", t("待審核", "To review"), toReview.length], ["done", t("已確認", "Approved"), (list?.length ?? 0) - toReview.length]] as const;
   const head = "h-10 px-3 text-[13px] font-semibold text-muted-foreground";
   const cell = "px-3 py-3";
+  const panel = "gap-0 p-5";
+  const isSO = (d: ListedDoc) => d.cls === "SO";
 
   return (
-    <div className="mx-auto max-w-[72rem]">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-        <div>
-          <h1 className="mb-1 text-2xl leading-tight font-semibold tracking-[-0.3px]">{t("文件", "Documents")}</h1>
-          <p className="max-w-[62ch] text-muted-foreground">{t("裝箱單和託運單，讀好也核對好了。認得的廠商、每個值都核對通過就自動確認；其他的在這裡等你，只標出有疑慮的值。",
-            "Packing lists and shipping orders, read and checked. A known sender whose values all pass is approved without you; the rest wait here with only the doubtful values marked.")}</p>
-        </div>
-        {/* The one filled button on this page. */}
-        <Button size="lg" onClick={() => input.current?.click()}>{t("上傳 PDF", "Upload a PDF")}</Button>
-        <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
-      </div>
+    <div className="mx-auto grid max-w-[80rem] grid-cols-[minmax(0,1fr)] gap-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)]">
+        <Card className={panel}>
+          <div className="mb-3 flex items-center gap-2">
+            <Icon d={ICON.inbox} />
+            <h2 className="text-base font-semibold">{t("待審核", "To review")}</h2>
+            {toReview.length > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold text-primary-foreground">{toReview.length}</span>}
+          </div>
+          {!list && error == null && <p className="text-sm text-muted-foreground">{t("載入中…", "Loading…")}</p>}
+          {list && !toReview.length && <p className="text-sm text-muted-foreground">{t("沒有在等你的文件。", "Nothing is waiting for you.")}</p>}
+          <ul className="m-0 grid list-none gap-1 p-0">
+            {toReview.slice(0, 4).map((d) => (
+              <li key={d.id}>
+                <a href={`#${d.id}`} className="group flex items-center gap-3 rounded-xl p-2 text-foreground no-underline transition-colors hover:bg-accent">
+                  <DocIcon so={isSO(d)} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{d.name}</span>
+                    <span className="block truncate text-[13px] text-muted-foreground">{d.sender ?? t("還不認得的廠商", "New sender")} · {when(d.created_at)}</span>
+                  </span>
+                  {d.flagged ? <span className="text-xs font-medium whitespace-nowrap text-warn">{t(`${d.flagged} 個疑慮`, `${d.flagged} doubtful`)}</span> : null}
+                  <Icon d={ICON.chevron} className="text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                </a>
+              </li>
+            ))}
+          </ul>
+          {toReview.length > 4 && <button type="button" onClick={() => setFilter("review")} className="mt-2 cursor-pointer self-start border-0 bg-transparent p-0 text-sm text-primary hover:underline">{t(`看全部 ${toReview.length} 份`, `See all ${toReview.length}`)}</button>}
+        </Card>
 
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 min-[1000px]:grid-cols-[minmax(0,1fr)_19rem]">
-        {/* The whole list takes a dropped PDF, so there is no separate box to aim at. */}
-        <section aria-labelledby="doc-list" className={cn("rounded-2xl border bg-card px-5 pt-4 pb-2 transition-colors", over && "border-primary bg-accent")}
+        {/* The upload panel is also the drop target; it comes first on a phone. */}
+        <section aria-labelledby="upload" className={cn("order-first flex flex-col items-center justify-center rounded-2xl border border-white/80 bg-card px-6 py-8 text-center shadow-[0_1px_2px_rgb(16_40_90/0.04),0_10px_30px_rgb(16_40_90/0.06)] backdrop-blur-xl transition-colors min-[1100px]:order-none",
+          over && "border-primary bg-accent")}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
           onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}>
-          <h2 id="doc-list" className="sr-only">{t("文件清單", "Document list")}</h2>
+          <span aria-hidden="true" className="relative mb-4 grid size-16 place-items-center rounded-2xl bg-accent text-primary">
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h4" /></svg>
+            <span className="absolute -right-1.5 -bottom-1.5 grid size-6 place-items-center rounded-full border-2 border-white bg-primary text-white">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 5 5 9-10" /></svg>
+            </span>
+          </span>
+          <h1 id="upload" className="mb-2 text-xl font-semibold tracking-[-0.2px]">{t("收一份裝箱單或託運單", "Receive a packing list or shipping order")}</h1>
+          <p className="mb-5 max-w-[46ch] text-sm text-muted-foreground">{t("第一系統讀出每一列，第二系統逐一核對每個值。認得的廠商、每個值都通過就自動確認；其他的只把有疑慮的地方標給你看。",
+            "The first system reads every row, the second checks every value. A known sender whose values all pass is approved without you; anything else comes to you with only the doubtful values marked.")}</p>
+          {/* The one filled button on this page. */}
+          <Button size="lg" onClick={() => input.current?.click()}><Icon d={ICON.upload} className="" />{t("選擇 PDF", "Choose a PDF")}</Button>
+          <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            {over ? t("放開就開始讀取", "Release to read it") : intake ? <>{t("或把 PDF 拖到這裡，或寄到 ", "or drop a PDF here, or email it to ")}<span className="font-medium text-foreground select-all">{intake}</span></> : t("或把 PDF 拖到這裡", "or drop a PDF here")}
+          </p>
+        </section>
+
+        <Card className={panel}>
+          <div className="mb-1 flex items-center gap-2">
+            <Icon d={ICON.spark} />
+            <h2 className="text-base font-semibold">{t("範例貨件", "Try a sample")}</h2>
+          </div>
+          <p className="mb-3 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開兩次，第二次就會自動確認。",
+            "Already read; you open a copy. Open the same sender twice and the second is approved without a person.")}</p>
+          <Samples onOpen={onOpen} />
+        </Card>
+      </div>
+
+      <Card className="gap-0 px-5 pt-4 pb-2">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Icon d={ICON.clock} />
+              <h2 className="text-base font-semibold">{t("所有文件", "All documents")}</h2>
+            </div>
             <div role="group" aria-label={t("篩選", "Filter")} className="flex gap-1">
               {filters.map(([k, name, n]) => (
                 <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
@@ -250,7 +322,6 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
                 </button>
               ))}
             </div>
-            <p className="text-[13px] text-muted-foreground">{over ? t("放開就開始讀取", "Release to read it") : t("PDF 可以直接拖到這份清單上", "You can drop a PDF anywhere on this list")}</p>
           </div>
 
           {error != null && <p className="py-3 text-destructive" role="alert">{errorMessage(error)}</p>}
@@ -264,7 +335,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
           {!!shown.length && (
             <Table className="text-sm">
               <TableHeader>
-                <TableRow className="hover:bg-transparent">
+                <TableRow className="border-0 bg-muted hover:bg-muted [&>th:first-child]:rounded-l-lg [&>th:last-child]:rounded-r-lg">
                   <TableHead className={head}>{t("文件", "Document")}</TableHead>
                   <TableHead className={head}>{t("寄件公司", "Sender")}</TableHead>
                   <TableHead className={head}>{t("狀態", "Status")}</TableHead>
@@ -274,12 +345,15 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
               </TableHeader>
               <TableBody>
                 {shown.map((d) => (
-                  // fobby's flagged row: a document waiting for a person is tinted, with the blue bar on its first cell.
-                  <TableRow key={d.id} onClick={() => go(d.id)}
-                    className={cn("cursor-pointer hover:bg-accent", d.status === "review" && "bg-accent/60 [&>td:first-child]:shadow-[inset_3px_0_var(--primary)]")}>
+                  <TableRow key={d.id} onClick={() => go(d.id)} className="cursor-pointer hover:bg-accent/70">
                     <TableCell className={cell}>
-                      <a href={`#${d.id}`} className="font-medium text-foreground no-underline hover:underline">{d.name}</a>
-                      <span className="block text-[13px] text-muted-foreground">{DOC_TYPE[d.cls ?? ""] ?? d.cls ?? "—"}</span>
+                      <span className="flex items-center gap-3">
+                        <DocIcon so={isSO(d)} />
+                        <span>
+                          <a href={`#${d.id}`} className="font-medium text-foreground no-underline hover:underline">{d.name}</a>
+                          <span className="block text-[13px] text-muted-foreground">{DOC_TYPE[d.cls ?? ""] ?? d.cls ?? "—"}</span>
+                        </span>
+                      </span>
                     </TableCell>
                     <TableCell className={cn(cell, "max-w-[16rem] truncate")}>{d.sender ?? <span className="text-muted-foreground">{t("還不認得", "Not known yet")}</span>}</TableCell>
                     <TableCell className={cell}>{statusBadge(d)}</TableCell>
@@ -294,24 +368,7 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
               </TableBody>
             </Table>
           )}
-        </section>
-
-        <aside className="grid gap-5">
-          <section aria-labelledby="samples" className="rounded-2xl border bg-card p-5">
-            <h2 id="samples" className="mb-1 text-lg font-semibold">{t("範例貨件", "Try a sample")}</h2>
-            <p className="mb-4 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開兩次，第二次就會自動確認。",
-              "Already read; you open a copy. Open the same sender twice and the second is approved without a person.")}</p>
-            <Samples onOpen={onOpen} />
-          </section>
-          {intake && (
-            <section aria-labelledby="by-email" className="rounded-2xl border bg-card p-5">
-              <h2 id="by-email" className="mb-1 text-lg font-semibold">{t("用 email 寄來", "Send by email")}</h2>
-              <p className="text-[13px] text-muted-foreground">{t("把 PDF 附在信裡寄到", "Attach PDFs and send them to")}</p>
-              <p className="mt-1 font-medium break-all select-all">{intake}</p>
-            </section>
-          )}
-        </aside>
-      </div>
+      </Card>
     </div>
   );
 }

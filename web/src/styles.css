@@ -1,43 +1,42 @@
 @import "tailwindcss";
 
 /*
- * fobby's brand (the fobby.io DESIGN.md): cream paper, the page a shade darker than the card, dark gray ink, royal blue
- * for action and lighter steps of that blue for everything that needs a look. Light only, as fobby is: pages are read
- * on paper colours by everyone. shadcn's variable names; chip, warn, ok and edit are this app's own:
- * warn is "needs a person's look" (fobby's flag blue), ok is "done" (ink on gray, colour is kept for what needs action),
- * edit is a value the clerk changed. Errors use destructive (fobby's danger red).
+ * Light glass: frosted white panels over a pale blue wash, navy ink, one bright blue for action. Light only.
+ * shadcn's variable names; chip, warn, ok and edit are this app's own: warn is "needs a person's look" (amber),
+ * ok is "done" (green), edit is a value the clerk changed. Errors use destructive.
+ * --card is translucent so the wash shows through; popovers stay solid so menus stay readable.
  */
 :root {
   color-scheme: light;
-  --background: #efe6d3;
-  --foreground: #444444;
-  --card: #f9f6eb;
-  --card-foreground: #444444;
-  --popover: #f9f6eb;
-  --popover-foreground: #444444;
-  --primary: #2456c9;
-  --primary-press: #1b45a6;
+  --background: #eef3fa;
+  --foreground: #1f2a44;
+  --card: rgb(255 255 255 / 0.78);
+  --card-foreground: #1f2a44;
+  --popover: #ffffff;
+  --popover-foreground: #1f2a44;
+  --primary: #1a66e0;
+  --primary-press: #1659c7;
   --primary-foreground: #ffffff;
-  --secondary: #efe6d3;
-  --secondary-foreground: #2456c9;
-  --muted: #e8effc;
-  --muted-foreground: #636363;
-  --accent: #e8effc;
-  --accent-foreground: #444444;
-  --destructive: #ca232e;
-  --border: #e3e7ed;
-  --input: #808080;
-  --ring: #2456c9;
+  --secondary: #f3f6fb;
+  --secondary-foreground: #1a66e0;
+  --muted: #f3f6fb;
+  --muted-foreground: #5f6a82;
+  --accent: #edf3ff;
+  --accent-foreground: #1f2a44;
+  --destructive: #d92d20;
+  --border: #e3e9f2;
+  --input: #7d879c;
+  --ring: #1a66e0;
   --radius: 8px;
-  --chip: #2456c9;
+  --chip: #1a66e0;
   --chip-foreground: #ffffff;
-  --chip-sub: #d6e3fb;
-  --warn: #1b45a6;
-  --warn-bg: #d6e3fb;
-  --warn-line: #2456c9;
-  --ok: #444444;
-  --ok-bg: #e3e7ed;
-  --edit: #e8effc;
+  --chip-sub: #dbe7ff;
+  --warn: #b45309;
+  --warn-bg: #fff1df;
+  --warn-line: #f59e0b;
+  --ok: #137336;
+  --ok-bg: #e5f6eb;
+  --edit: #edf3ff;
 }
 
 @theme inline {
@@ -79,8 +78,13 @@
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  body { @apply bg-background text-foreground font-sans; font-size: 15px; line-height: 1.5; font-variant-numeric: tabular-nums; }
-  ::selection { background: var(--warn-bg); color: var(--foreground); }
+  body {
+    @apply bg-background text-foreground font-sans; font-size: 15px; line-height: 1.5; font-variant-numeric: tabular-nums;
+    background-image: radial-gradient(1100px 620px at 8% -8%, #d9e6fb 0, transparent 62%),
+      radial-gradient(900px 560px at 98% 4%, #e3ecfb 0, transparent 60%), linear-gradient(180deg, #f5f8fd 0, #eaf0f9 100%);
+    background-attachment: fixed;
+  }
+  ::selection { background: var(--chip-sub); color: var(--foreground); }
 }
 
 /* Numbered steps; a done step shows a tick. */
