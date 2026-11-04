@@ -161,7 +161,7 @@ function TestSend({ node }: { node: Node }) {
   return (
     <div className="mb-3">
       <Button size="sm" variant="outline" disabled={!node.url?.trim() || state === "busy"} onClick={go}>{state === "busy" ? t("送出中…", "Sending…") : t("送一筆測試", "Send a test event")}</Button>
-      {typeof state === "object" && ("error" in state ? <p className="mt-1 text-[13px] text-warn">{errorMessage(state.error)}</p> : <ul className="mt-1 list-none p-0"><DeliveryRow d={state} /></ul>)}
+      {typeof state === "object" && ("error" in state ? <p className="mt-1 text-[13px] text-destructive" role="alert">{errorMessage(state.error)}</p> : <ul className="mt-1 list-none p-0"><DeliveryRow d={state} /></ul>)}
     </div>
   );
 }

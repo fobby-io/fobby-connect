@@ -1,66 +1,43 @@
 @import "tailwindcss";
 
-/* The old page's colour tokens, under shadcn's variable names; the extra ones (chip, warn, ok, edit) are this app's own. */
+/*
+ * fobby's brand (the fobby.io DESIGN.md): cream paper, the page a shade darker than the card, dark gray ink, royal blue
+ * for action and lighter steps of that blue for everything that needs a look. Light only, as fobby is: pages are read
+ * on paper colours by everyone. shadcn's variable names; chip, warn, ok and edit are this app's own:
+ * warn is "needs a person's look" (fobby's flag blue), ok is "done" (ink on gray, colour is kept for what needs action),
+ * edit is a value the clerk changed. Errors use destructive (fobby's danger red).
+ */
 :root {
-  --background: #eef1f6;
-  --foreground: #0f1b2d;
-  --card: #ffffff;
-  --card-foreground: #0f1b2d;
-  --popover: #ffffff;
-  --popover-foreground: #0f1b2d;
-  --primary: #1f3a68;
+  color-scheme: light;
+  --background: #efe6d3;
+  --foreground: #444444;
+  --card: #f9f6eb;
+  --card-foreground: #444444;
+  --popover: #f9f6eb;
+  --popover-foreground: #444444;
+  --primary: #2456c9;
+  --primary-press: #1b45a6;
   --primary-foreground: #ffffff;
-  --secondary: #f5f7fb;
-  --secondary-foreground: #0f1b2d;
-  --muted: #f5f7fb;
-  --muted-foreground: #5d6880;
-  --accent: #f5f7fb;
-  --accent-foreground: #0f1b2d;
-  --destructive: #b42318;
-  --border: #dde3ec;
-  --input: #7d889c;
-  --ring: #1f3a68;
-  --radius: 10px;
-  --chip: #1f3a68;
+  --secondary: #efe6d3;
+  --secondary-foreground: #2456c9;
+  --muted: #e8effc;
+  --muted-foreground: #636363;
+  --accent: #e8effc;
+  --accent-foreground: #444444;
+  --destructive: #ca232e;
+  --border: #e3e7ed;
+  --input: #808080;
+  --ring: #2456c9;
+  --radius: 8px;
+  --chip: #2456c9;
   --chip-foreground: #ffffff;
-  --chip-sub: #b9c7e0;
-  --warn: #8a5300;
-  --warn-bg: #fff3d6;
-  --warn-line: #f0cf83;
-  --ok: #1f7a4a;
-  --ok-bg: #e5f4ec;
-  --edit: #fff1b8;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0e131b;
-    --foreground: #e6ebf3;
-    --card: #161d28;
-    --card-foreground: #e6ebf3;
-    --popover: #161d28;
-    --popover-foreground: #e6ebf3;
-    --primary: #8fb3ec;
-    --primary-foreground: #0b1526;
-    --secondary: #1c2432;
-    --secondary-foreground: #e6ebf3;
-    --muted: #1c2432;
-    --muted-foreground: #9aa6ba;
-    --accent: #1c2432;
-    --accent-foreground: #e6ebf3;
-    --destructive: #f97066;
-    --border: #2b3546;
-    --input: #66738b;
-    --ring: #8fb3ec;
-    --chip: #2a4a80;
-    --chip-foreground: #f1f5fc;
-    --chip-sub: #b7c8e6;
-    --warn: #f2c063;
-    --warn-bg: #33270f;
-    --warn-line: #6d5420;
-    --ok: #7fd3a2;
-    --ok-bg: #14301f;
-    --edit: #4a3f12;
-  }
+  --chip-sub: #d6e3fb;
+  --warn: #1b45a6;
+  --warn-bg: #d6e3fb;
+  --warn-line: #2456c9;
+  --ok: #444444;
+  --ok-bg: #e3e7ed;
+  --edit: #e8effc;
 }
 
 @theme inline {
@@ -95,13 +72,15 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 6px);
-  --font-sans: system-ui, "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --color-primary-press: var(--primary-press);
+  --font-sans: Inter, "Noto Sans TC", system-ui, -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  body { @apply bg-background text-foreground font-sans; font-size: 15px; line-height: 1.5; }
+  body { @apply bg-background text-foreground font-sans; font-size: 15px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+  ::selection { background: var(--warn-bg); color: var(--foreground); }
 }
 
 /* Numbered steps; a done step shows a tick. */
@@ -124,7 +103,7 @@
 .wires path { fill: none; stroke: var(--primary); stroke-width: 1.5; opacity: .55; }
 .wires path.edited { stroke: var(--warn); opacity: 1; stroke-width: 2; }
 .wires circle { fill: var(--card); stroke: var(--primary); stroke-width: 1.5; }
-.chip-select option { color: #0f1b2d; }
+.chip-select option { color: var(--foreground); }
 
 .raw-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
 .raw-clamp:hover { -webkit-line-clamp: unset; }

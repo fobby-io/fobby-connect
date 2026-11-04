@@ -20,7 +20,7 @@ export function Vendors() {
         <p className="text-muted-foreground">{t("每家寄件公司各有自己的讀法和紀錄。確認過一份就認得這家；之後每個值都核對通過的文件會自動確認，被改過一次就先暫停。",
           "Each sender has its own reading and record. One approved document and the sender is known; after that, documents whose values all pass are approved automatically, and one corrected afterwards pauses that.")}</p>
       </div>
-      {error != null && <p className="text-warn" role="alert">{errorMessage(error)}</p>}
+      {error != null && <p className="text-destructive" role="alert">{errorMessage(error)}</p>}
       {list && !list.length && <Card className={SECTION}><p className="text-muted-foreground">{t("還沒有認得的廠商。確認一份文件後，那家會出現在這裡。", "No senders yet. Approve a document and its sender appears here.")}</p></Card>}
       <div className="grid gap-4 min-[1100px]:grid-cols-2">
         {list?.map((s) => <Sender key={s.sender} s={s} />)}

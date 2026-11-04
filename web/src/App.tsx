@@ -161,23 +161,29 @@ export function Samples({ onOpen }: { onOpen: (d: Doc) => void }) {
       <ul className="m-0 grid list-none gap-2 p-0">
         {list?.map((s) => (
           <li key={s.id}>
-            <button type="button" disabled={!!opening} onClick={() => open(s)}
-              className="flex w-full cursor-pointer items-baseline justify-between gap-3 rounded-lg border bg-card px-4 py-2.5 text-left text-foreground hover:border-primary disabled:cursor-default disabled:opacity-60">
-              <span className="font-semibold">{s.name}</span>
-              <span className="text-sm text-muted-foreground">{opening === s.id ? t("讀取並核對中…", "Opening and checking…") : s.sender}</span>
+            <button type="button" disabled={!!opening} onClick={() => open(s)} aria-busy={opening === s.id}
+              className="group flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-transparent px-3.5 py-2.5 text-left text-foreground transition-colors hover:border-primary hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60">
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{s.name}</span>
+                <span className="block truncate text-[13px] text-muted-foreground">{opening === s.id ? t("讀取並核對中…", "Opening and checking…") : s.sender}</span>
+              </span>
+              <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"
+                className="flex-none text-primary transition-transform group-hover:translate-x-0.5"><path d="M3 8h10M9 4l4 4-4 4" /></svg>
             </button>
           </li>
         ))}
       </ul>
-      {error != null && <p className="mt-2 text-sm text-warn" role="alert">{errorMessage(error)}</p>}
+      {error != null && <p className="mt-2 text-sm text-destructive" role="alert">{errorMessage(error)}</p>}
     </div>
   );
 }
 
 export const statusBadge = (d: Pick<ListedDoc, "status" | "reopened">) => {
-  if (d.status === "auto") return <Badge className="rounded-full bg-ok-bg text-ok">{t("自動確認", "Auto-approved")}</Badge>;
-  if (d.status === "approved") return <Badge variant="secondary" className="rounded-full">{t("已確認", "Approved")}</Badge>;
-  return <Badge className="rounded-full bg-warn-bg text-warn">{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
+  // fobby's tags: ink on a blue step; the step says how much it needs a person, the word says what it is.
+  const tag = "rounded-full border-0 px-2 py-0.5 text-xs font-medium text-foreground";
+  if (d.status === "auto") return <Badge className={cn(tag, "bg-accent")}>{t("自動確認", "Auto-approved")}</Badge>;
+  if (d.status === "approved") return <Badge className={cn(tag, "bg-ok-bg")}>{t("已確認", "Approved")}</Badge>;
+  return <Badge className={cn(tag, "bg-warn-bg")}>{d.reopened ? t("重新審核", "Reopened") : t("待審核", "To review")}</Badge>;
 };
 
 // GitHub's mark, from Octicons (MIT).
@@ -193,7 +199,7 @@ export function ViaEmail({ doc }: { doc: Doc }) {
   return <p className="text-[13px] text-muted-foreground">{t(`由 ${doc.source.from} 寄來`, `Emailed by ${doc.source.from}`)}{doc.source.subject && t(`：「${doc.source.subject}」`, `: "${doc.source.subject}"`)}</p>;
 }
 
-export const when = (iso: string) => (iso ? new Date(iso).toLocaleString(undefined, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+export const when = (iso: string) => (iso ? new Date(iso).toLocaleString(t("zh-TW", "en-US"), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 
 function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: Doc) => void }) {
   useLang();
@@ -202,64 +208,111 @@ function Documents({ onFile, onOpen }: { onFile: (f: File) => void; onOpen: (d: 
   const [over, setOver] = useState(false);
   const [list, setList] = useState<ListedDoc[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  useEffect(() => { api<ListedDoc[]>("/api/documents").then(setList, setError); }, []);
+  const [filter, setFilter] = useState<"all" | "review" | "done">("all");
+  const [intake, setIntake] = useState<string | null>(null);
+  useEffect(() => {
+    api<ListedDoc[]>("/api/documents").then(setList, setError);
+    api<{ intake: string | null }>("/api/flow").then((f) => setIntake(f.intake), () => setIntake(null));
+  }, []);
+  const toReview = list?.filter((d) => d.status === "review") ?? [];
+  const shown = !list ? [] : filter === "review" ? toReview : filter === "done" ? list.filter((d) => d.status !== "review") : list;
+  const filters = [["all", t("全部", "All"), list?.length ?? 0], ["review", t("待審核", "To review"), toReview.length], ["done", t("已確認", "Approved"), (list?.length ?? 0) - toReview.length]] as const;
+  const head = "h-10 px-3 text-[13px] font-semibold text-muted-foreground";
+  const cell = "px-3 py-3";
+
   return (
-    <>
-      <div className="mb-4 grid gap-4 min-[960px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className={cn("flex flex-col justify-center rounded-2xl border-2 border-dashed bg-card px-8 py-8 text-center", over && "border-primary")}
-          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}>
-          <h1 className="mb-2 text-xl font-bold">{t("收一份裝箱單或託運單", "Receive a packing list or shipping order")}</h1>
-          <p className="mx-auto mb-5 max-w-[520px] text-muted-foreground">{t("第一系統讀出每一列，第二系統逐一核對每個值。認得的廠商、每個值都核對通過，就自動確認；其他的只把有疑慮的地方標給你看。",
-            "The first system reads every row and the second checks every value. A known sender whose values all pass is approved automatically; anything else comes to you with only the doubtful values marked.")}</p>
-          <div><Button onClick={() => input.current?.click()}>{t("選擇 PDF", "Choose a PDF")}</Button></div>
-          <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
-          <p className="mt-2 text-[13px] text-muted-foreground">{t("或把 PDF 拖進這個框。之後也可以從 email 收件。", "or drop a PDF into this box. Email intake comes next.")}</p>
+    <div className="mx-auto max-w-[72rem]">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div>
+          <h1 className="mb-1 text-2xl leading-tight font-semibold tracking-[-0.3px]">{t("文件", "Documents")}</h1>
+          <p className="max-w-[62ch] text-muted-foreground">{t("裝箱單和託運單，讀好也核對好了。認得的廠商、每個值都核對通過就自動確認；其他的在這裡等你，只標出有疑慮的值。",
+            "Packing lists and shipping orders, read and checked. A known sender whose values all pass is approved without you; the rest wait here with only the doubtful values marked.")}</p>
         </div>
-        <Card className={cn(SECTION, "mb-0")}>
-          <h2 className="mb-1 text-base font-bold">{t("範例貨件", "Sample shipments")}</h2>
-          <p className="mb-3 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開第二次，就會看到自動確認。", "Already read; you open a copy. Open one from the same sender twice to see automatic approval.")}</p>
-          <Samples onOpen={onOpen} />
-        </Card>
+        {/* The one filled button on this page. */}
+        <Button size="lg" onClick={() => input.current?.click()}>{t("上傳 PDF", "Upload a PDF")}</Button>
+        <input ref={input} type="file" accept="application/pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
       </div>
 
-      <Card className={SECTION}>
-        <h2 className="mb-3 text-lg font-bold">{t("文件", "Documents")}</h2>
-        {error != null && <p className="text-warn" role="alert">{errorMessage(error)}</p>}
-        {list && !list.length && <p className="text-muted-foreground">{t("還沒有文件。上傳一份或打開範例，它會出現在這裡。", "No documents yet. Upload one or open a sample and it shows up here.")}</p>}
-        {!!list?.length && (
-          <div className="overflow-x-auto rounded-lg border">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 min-[1000px]:grid-cols-[minmax(0,1fr)_19rem]">
+        {/* The whole list takes a dropped PDF, so there is no separate box to aim at. */}
+        <section aria-labelledby="doc-list" className={cn("rounded-2xl border bg-card px-5 pt-4 pb-2 transition-colors", over && "border-primary bg-accent")}
+          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(false); }}
+          onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}>
+          <h2 id="doc-list" className="sr-only">{t("文件清單", "Document list")}</h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div role="group" aria-label={t("篩選", "Filter")} className="flex gap-1">
+              {filters.map(([k, name, n]) => (
+                <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}
+                  className={cn("cursor-pointer rounded-full border-0 px-3 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                    filter === k ? "bg-accent font-medium text-foreground" : "bg-transparent text-muted-foreground hover:text-foreground")}>
+                  {name} <span className="ml-0.5 text-muted-foreground">{n}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[13px] text-muted-foreground">{over ? t("放開就開始讀取", "Release to read it") : t("PDF 可以直接拖到這份清單上", "You can drop a PDF anywhere on this list")}</p>
+          </div>
+
+          {error != null && <p className="py-3 text-destructive" role="alert">{errorMessage(error)}</p>}
+          {!list && error == null && <p className="py-6 text-muted-foreground">{t("載入中…", "Loading…")}</p>}
+          {list && !shown.length && (
+            <p className="border-t py-8 text-center text-muted-foreground">
+              {!list.length ? t("還沒有文件。上傳一份 PDF，或打開右邊的範例。", "No documents yet. Upload a PDF, or open a sample.")
+                : filter === "review" ? t("沒有要審核的文件。", "Nothing is waiting for review.") : t("還沒有確認過的文件。", "Nothing approved yet.")}
+            </p>
+          )}
+          {!!shown.length && (
             <Table className="text-sm">
               <TableHeader>
-                <TableRow className="bg-muted hover:bg-muted">
-                  <TableHead className="px-3 font-semibold">{t("文件", "Document")}</TableHead>
-                  <TableHead className="px-3 font-semibold">{t("寄件公司", "Sender")}</TableHead>
-                  <TableHead className="px-3 font-semibold">{t("類型", "Type")}</TableHead>
-                  <TableHead className="px-3 font-semibold">{t("狀態", "Status")}</TableHead>
-                  <TableHead className="px-3 font-semibold">{t("第二系統", "Second check")}</TableHead>
-                  <TableHead className="px-3 font-semibold">{t("收件時間", "Received")}</TableHead>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className={head}>{t("文件", "Document")}</TableHead>
+                  <TableHead className={head}>{t("寄件公司", "Sender")}</TableHead>
+                  <TableHead className={head}>{t("狀態", "Status")}</TableHead>
+                  <TableHead className={head}>{t("第二系統", "Second check")}</TableHead>
+                  <TableHead className={cn(head, "text-right")}>{t("收件時間", "Received")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {list.map((d) => (
-                  <TableRow key={d.id} className="cursor-pointer" onClick={() => go(d.id)}>
-                    <TableCell className="px-3 py-2.5"><a href={`#${d.id}`} className="font-semibold text-foreground no-underline hover:underline">{d.name}</a></TableCell>
-                    <TableCell className="px-3 py-2.5">{d.sender ?? "—"}</TableCell>
-                    <TableCell className="px-3 py-2.5">{DOC_TYPE[d.cls ?? ""] ?? d.cls ?? "—"}</TableCell>
-                    <TableCell className="px-3 py-2.5">{statusBadge(d)}</TableCell>
-                    <TableCell className="px-3 py-2.5 text-muted-foreground">
-                      {d.flagged === null ? t("未核對", "Not checked") : d.flagged ? <span className="text-warn">{t(`${d.flagged} 個有疑慮`, `${d.flagged} doubtful`)}</span> : t("全部通過", "All passed")}
+                {shown.map((d) => (
+                  // fobby's flagged row: a document waiting for a person is tinted, with the blue bar on its first cell.
+                  <TableRow key={d.id} onClick={() => go(d.id)}
+                    className={cn("cursor-pointer hover:bg-accent", d.status === "review" && "bg-accent/60 [&>td:first-child]:shadow-[inset_3px_0_var(--primary)]")}>
+                    <TableCell className={cell}>
+                      <a href={`#${d.id}`} className="font-medium text-foreground no-underline hover:underline">{d.name}</a>
+                      <span className="block text-[13px] text-muted-foreground">{DOC_TYPE[d.cls ?? ""] ?? d.cls ?? "—"}</span>
                     </TableCell>
-                    <TableCell className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{when(d.created_at)}</TableCell>
+                    <TableCell className={cn(cell, "max-w-[16rem] truncate")}>{d.sender ?? <span className="text-muted-foreground">{t("還不認得", "Not known yet")}</span>}</TableCell>
+                    <TableCell className={cell}>{statusBadge(d)}</TableCell>
+                    <TableCell className={cell}>
+                      {d.flagged === null ? <span className="text-muted-foreground">{t("未核對", "Not checked")}</span>
+                        : d.flagged ? <span className="font-medium text-warn">{t(`${d.flagged} 個有疑慮`, `${d.flagged} doubtful`)}</span>
+                        : <span className="text-muted-foreground">{t("全部通過", "All passed")}</span>}
+                    </TableCell>
+                    <TableCell className={cn(cell, "text-right whitespace-nowrap text-muted-foreground")}>{when(d.created_at)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </div>
-        )}
-      </Card>
-    </>
+          )}
+        </section>
+
+        <aside className="grid gap-5">
+          <section aria-labelledby="samples" className="rounded-2xl border bg-card p-5">
+            <h2 id="samples" className="mb-1 text-lg font-semibold">{t("範例貨件", "Try a sample")}</h2>
+            <p className="mb-4 text-[13px] text-muted-foreground">{t("已經讀好的範例，打開的是複本。同一家打開兩次，第二次就會自動確認。",
+              "Already read; you open a copy. Open the same sender twice and the second is approved without a person.")}</p>
+            <Samples onOpen={onOpen} />
+          </section>
+          {intake && (
+            <section aria-labelledby="by-email" className="rounded-2xl border bg-card p-5">
+              <h2 id="by-email" className="mb-1 text-lg font-semibold">{t("用 email 寄來", "Send by email")}</h2>
+              <p className="text-[13px] text-muted-foreground">{t("把 PDF 附在信裡寄到", "Attach PDFs and send them to")}</p>
+              <p className="mt-1 font-medium break-all select-all">{intake}</p>
+            </section>
+          )}
+        </aside>
+      </div>
+    </div>
   );
 }
 
@@ -295,7 +348,7 @@ function Export({ doc }: { doc: Doc }) {
           <span role="status" className="text-sm text-muted-foreground">
             {copy === "done" && t("已複製", "Copied")}
             {copy === "failed" && <>{t("無法自動複製，請手動複製：", "Could not copy; copy it by hand: ")}<code className="select-all break-all">{url}</code></>}
-            {typeof sending === "object" && <span className="text-warn">{errorMessage(sending.error)}</span>}
+            {typeof sending === "object" && <span className="text-destructive" role="alert">{errorMessage(sending.error)}</span>}
           </span>
         </div>
       ) : (
@@ -410,7 +463,7 @@ function Result({ doc, onReopened }: { doc: Doc; onReopened: (d: Doc) => void })
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" disabled={reopen === "busy"} onClick={markWrong}>{t("這份有錯，重新審核", "This is wrong, reopen")}</Button>
           <Button variant="ghost" onClick={() => go("")}>{t("回到文件清單", "Back to documents")}</Button>
-          {typeof reopen === "object" && <span className="text-sm text-warn" role="alert">{errorMessage(reopen.error)}</span>}
+          {typeof reopen === "object" && <span className="text-sm text-destructive" role="alert">{errorMessage(reopen.error)}</span>}
         </div>
       </Card>
     </>

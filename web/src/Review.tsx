@@ -568,7 +568,7 @@ function PageViewer({ docId, pageNos, current, box }: { docId: string; pageNos: 
 
   return (
     <div>
-      {error != null && <p className="text-warn" role="alert">{t("原文件載入失敗：", "Could not load the source document: ")}{errorMessage(error)}</p>}
+      {error != null && <p className="text-destructive" role="alert">{t("原文件載入失敗：", "Could not load the source document: ")}{errorMessage(error)}</p>}
       {error == null && loaded <= current && <p className="text-[13px] text-muted-foreground">{t("原文件載入中…", "Loading the source document…")}</p>}
       {pageNos.map((n, i) => (
         <div key={n} className="relative" hidden={i !== current}>
