@@ -18,7 +18,7 @@ const PAGE: Page = {
 
 function setup(client: MetaClient) {
   const store = new Map<string, Uint8Array>();
-  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)) };
+  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
   return { store, app: createApp({ files, client }) };
 }
 const reads = () => {

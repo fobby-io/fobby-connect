@@ -31,6 +31,8 @@ export type Sample = { id: string; name: string; sender: string };
 export type Delivery = {
   id: string; event: string; name: string; url: string; at: string;
   status: number | null; ok: boolean; receipt: string | null; ms: number; error?: string;
+  /** Which try this was, and when the next one is due; null when delivered or given up. Older records have neither. */
+  attempt?: number; next_at?: string | null;
 };
 export type ListedDoc = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";

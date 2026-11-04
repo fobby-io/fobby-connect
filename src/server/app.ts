@@ -16,8 +16,8 @@ import { exportCsv, exportJson, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, targets, type Delivery, type Flow } from "./webhook.ts";
 
 /** Keys: runs/<id>.pdf|json, space.json, <space>/index/<id>.json, <space>/holds/<sender>.json, profiles.json, flow.json, samples/index.json, samples/<id>.pdf|json; runs/index.json and senders.json are read from older data only. */
-/** list gives every key that starts with prefix, in any order. */
-export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]> };
+/** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
+export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]>; delete(key: string): Promise<void> };
 /** decide is the second system (Jev); without it nothing is verified and every document goes to a person. */
 export type Deps = { files: Files; client: MetaClient; spent?: () => number; decide?: Decide };
 /** Why a document was not approved automatically; empty when it was. */
@@ -131,7 +131,36 @@ export function createApp(deps: Deps) {
     const event = d.deliveries?.length ? "document.corrected" : "document.approved";
     const out = await Promise.all(targets(flow.graph, d.approved!.sender).map((t) => deliver(t, event, exportJson(d as Exportable), flow.secret)));
     d.deliveries = [...out, ...(d.deliveries ?? [])].slice(0, 20);
+    await queue(d.id, out);
     return out;
+  }
+  // A failed delivery waits in <space>/retries/ until its next_at; retry() picks it up.
+  type Pending = { doc_id: string; delivery: string; due: string };
+  const queue = async (docId: string, ds: Delivery[]) => {
+    const dir = `${await space()}/retries/`;
+    for (const x of ds) {
+      if (x.next_at) await files.put(`${dir}${x.id}.json`, toJson({ doc_id: docId, delivery: x.id, due: x.next_at } satisfies Pending));
+      else await files.delete(`${dir}${x.id}.json`);
+    }
+  };
+
+  /** Tries again every failed delivery that is due. The host calls this on a timer, about once a minute. */
+  async function retry(now = new Date()) {
+    const due = (await entries<Pending>(`${await space()}/retries/`)).filter((p) => p.due <= now.toISOString());
+    const flow = await getFlow();
+    let sent = 0;
+    for (const p of due) {
+      const d = await load(p.doc_id).catch(() => null);
+      const prev = d?.deliveries?.find((x) => x.id === p.delivery);
+      // A document reopened since, or a delivery no longer on it, is not sent again.
+      if (!d?.approved?.answer || !prev) { await files.delete(`${await space()}/retries/${p.delivery}.json`); continue; }
+      const next = await deliver({ name: prev.name, url: prev.url }, prev.event, exportJson(d as Exportable), flow.secret, prev);
+      d.deliveries = d.deliveries!.map((x) => (x.id === next.id ? next : x));
+      await save(d);
+      await queue(d.id, [next]);
+      sent++;
+    }
+    return { due: due.length, sent };
   }
   const autoSend = async (d: Saved) => { const f = await getFlow(); if (f.graph?.autoSend) await send(d, f); };
 
@@ -286,7 +315,9 @@ export function createApp(deps: Deps) {
     if (req.method === "POST" && path === "/api/flow/test") {
       const b = await bodyJson<{ name?: string; url?: string }>();
       const f = await getFlow();
-      return json(200, await deliver({ name: String(b.name ?? "Webhook").slice(0, 100), url: String(b.url ?? "") }, "test", { message: "Test delivery from Fobby Connect" }, f.secret));
+      // A test event is never queued for retry.
+      const d = await deliver({ name: String(b.name ?? "Webhook").slice(0, 100), url: String(b.url ?? "") }, "test", { message: "Test delivery from Fobby Connect" }, f.secret);
+      return json(200, { ...d, next_at: null });
     }
     // "This one is wrong" on an approved document: back to review, its example leaves the sender's approved set, and
     // the sender is on hold, so its next documents go to a person until one passes review unchanged.
@@ -305,6 +336,7 @@ export function createApp(deps: Deps) {
   }
 
   return {
+    retry,
     async fetch(req: Request): Promise<Response> {
       try {
         return await handle(req);

@@ -44,14 +44,14 @@ const noMeta: MetaClient = async () => { throw new Error("no model call expected
 function setup(decide?: Decide) {
   const store = new Map<string, Uint8Array>();
   const enc = new TextEncoder();
-  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)) };
+  const files = { get: async (k: string) => store.get(k) ?? null, put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
   const app = createApp({ files, client: noMeta, decide });
   const put = (s: unknown) => { store.set("samples/s1.json", enc.encode(JSON.stringify(s))); store.set("samples/s1.pdf", new Uint8Array([37, 80, 68, 70])); };
   put(sample());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const call = async (path: string, init?: RequestInit): Promise<any> => (await app.fetch(new Request(`http://x${path}`, init))).json();
   const post = (path: string, body?: unknown) => call(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-  return { store, put, call, open: () => post("/api/samples/s1/open"), approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
+  return { app, store, put, call, open: () => post("/api/samples/s1/open"), approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
 }
 
 describe("second system and automatic approval", () => {
@@ -227,6 +227,46 @@ describe("webhooks", () => {
     const again = await t.call(`/api/documents/${auto.id}`);
     vi.unstubAllGlobals();
     expect(again.deliveries.map((x: { event: string }) => x.event)).toEqual(["document.corrected", "document.approved"]);
+  });
+
+  it("tries a failed delivery again when due, with the same delivery id, and gives up after five tries", async () => {
+    // The receiver answers 500 to the first `fails` requests, then 200.
+    const got: Headers[] = [];
+    const flaky = (fails: number) => vi.stubGlobal("fetch", async (_: string, init: RequestInit) => {
+      got.push(new Headers(init.headers));
+      return new Response("{}", { status: got.length <= fails ? 500 : 200 });
+    });
+    const later = (min: number) => new Date(Date.now() + min * 60_000);
+
+    flaky(1);
+    const t = setup(jev().decide);
+    await t.approve((await t.open()).id);
+    await t.call("/api/flow", { method: "PUT", body: JSON.stringify({ graph: graph("https://erp.test/in") }) });
+    const auto = await t.open();
+    expect(auto.deliveries).toMatchObject([{ ok: false, status: 500, attempt: 1 }]);
+    expect(auto.deliveries[0].next_at).not.toBeNull();
+    expect(await t.app.retry()).toEqual({ due: 0, sent: 0 });
+    expect(await t.app.retry(later(2))).toEqual({ due: 1, sent: 1 });
+    const fixed = await t.call(`/api/documents/${auto.id}`);
+    expect(fixed.deliveries).toMatchObject([{ id: auto.deliveries[0].id, ok: true, attempt: 2, next_at: null }]);
+    expect(got.map((h) => h.get("x-fobby-delivery"))).toEqual([auto.deliveries[0].id, auto.deliveries[0].id]);
+    expect(await t.app.retry(later(999))).toEqual({ due: 0, sent: 0 });
+
+    got.length = 0;
+    flaky(99);
+    const t2 = setup(jev().decide);
+    await t2.approve((await t2.open()).id);
+    await t2.call("/api/flow", { method: "PUT", body: JSON.stringify({ graph: graph("https://erp.test/in") }) });
+    const down = await t2.open();
+    for (let i = 0; i < 6; i++) await t2.app.retry(later(1000 * (i + 1)));
+    vi.unstubAllGlobals();
+    expect((await t2.call(`/api/documents/${down.id}`)).deliveries).toMatchObject([{ ok: false, attempt: 5, next_at: null }]);
+    expect(got).toHaveLength(5);
+  });
+
+  it("does not retry a URL it refuses", async () => {
+    const d = await deliver({ name: "ERP", url: "http://erp.test/in" }, "test", {}, "whsec_x");
+    expect(d).toMatchObject({ ok: false, attempt: 1, next_at: null });
   });
 });
 

@@ -1,6 +1,6 @@
 // Local review server: the review API from app.ts on Node, with files under data/ and the disk cache in front of Meta.
 // Run: npx tsx src/server/local.ts   (http://localhost:8787)
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join } from "node:path";
 import { Readable } from "node:stream";
@@ -28,10 +28,13 @@ const files: Files = {
   put: async (key, bytes) => { mkdirSync(dirname(fileOf(key)), { recursive: true }); writeFileSync(fileOf(key), bytes); },
   // Prefixes here are directories ("<space>/index/"), so one level is enough.
   list: async (prefix) => existsSync(fileOf(prefix)) ? readdirSync(fileOf(prefix)).map((n) => prefix + n) : [],
+  delete: async (key) => rmSync(fileOf(key), { force: true }),
 };
 const decide = process.env.OPENROUTER_API_KEY ? jevClient(process.env.OPENROUTER_API_KEY) : undefined;
 if (!decide) console.warn("OPENROUTER_API_KEY is not set: nothing is verified, every document goes to review");
 const app = createApp({ files, client, spent, decide });
+// Failed webhook deliveries are tried again when due.
+setInterval(() => void app.retry().catch((e) => console.warn("webhook retry:", (e as Error).message)), 60_000).unref();
 
 const port = Number(process.env.PORT ?? 8787);
 createServer(async (req, res) => {

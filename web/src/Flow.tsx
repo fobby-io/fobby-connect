@@ -139,6 +139,8 @@ export function DeliveryRow({ d }: { d: Delivery }) {
       <b>{d.name}</b>
       <span className="text-muted-foreground">{d.event}</span>
       <span className="text-muted-foreground">{d.receipt ? t(`收據 ${d.receipt}`, `receipt ${d.receipt}`) : d.ok ? t("對方沒回收據編號", "no receipt id returned") : d.error ?? ""}</span>
+      {(d.attempt ?? 1) > 1 && <span className="text-muted-foreground">{t(`第 ${d.attempt} 次`, `try ${d.attempt}`)}</span>}
+      {!d.ok && (d.next_at ? <span className="text-warn">{t(`${when(d.next_at)} 自動重試`, `retries at ${when(d.next_at)}`)}</span> : d.attempt ? <span className="text-warn">{t("已停止重試", "retries stopped")}</span> : null)}
       <span className="ml-auto text-muted-foreground">{when(d.at)}・{d.ms} ms</span>
     </li>
   );
@@ -240,7 +242,7 @@ function Inspector({ g, node, secret, onPatch, onRemove, onAutoSend }: {
               <ul className="mb-3 list-disc pl-5 text-[13px] text-muted-foreground">
                 <li>{t("確認後的完整資料（跟下載的 JSON 一樣）用 POST 送出，事件是 document.approved；事後改過再確認的送 document.corrected。", "The approved record (the same JSON as the download) is POSTed as document.approved; one corrected and approved again goes as document.corrected.")}</li>
                 <li>{t("每次都附簽章：X-Fobby-Signature 是 sha256=HMAC(密鑰, 時間戳記.內容)，時間戳記在 X-Fobby-Timestamp。對方可以驗證是我們送的。", "Every delivery is signed: X-Fobby-Signature is sha256=HMAC(secret, timestamp.body), with the timestamp in X-Fobby-Timestamp, so the receiver can verify it came from us.")}</li>
-                <li>{t("對方回 2xx 算送達；回應 JSON 裡的 receipt_id（或 X-Receipt-Id 標頭）記成收據編號。重試還沒做。", "A 2xx answer counts as delivered; receipt_id in the JSON answer (or an X-Receipt-Id header) is kept as the receipt. Retries are not built yet.")}</li>
+                <li>{t("對方回 2xx 算送達；回應 JSON 裡的 receipt_id（或 X-Receipt-Id 標頭）記成收據編號。沒送到就自動重試：1 分鐘、5 分鐘、30 分鐘、2 小時後各一次，每次用同一個 delivery id，對方可以靠它去重。", "A 2xx answer counts as delivered; receipt_id in the JSON answer (or an X-Receipt-Id header) is kept as the receipt. A failed delivery is tried again after 1, 5 and 30 minutes and 2 hours, with the same delivery id so the receiver can drop duplicates.")}</li>
               </ul>
               <p className="mb-3 text-[13px]">{t("簽章密鑰：", "Signing secret: ")}<code className="break-all select-all">{secret}</code></p>
             </>
