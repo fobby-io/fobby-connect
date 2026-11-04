@@ -1,4 +1,5 @@
 import { schemas, responseFormat, type Variant } from "../shared/model-output.ts";
+import { CreditExhausted } from "./credit.ts";
 import type { Ledger } from "./ledger.ts";
 import { MetaError, type ChatRequest, type ContentPart, type MetaClient, type Message } from "./meta-client.ts";
 import { costUsd, DEFAULT_MODEL, MODELS, type ModelId, type Usage } from "./models.ts";
@@ -41,6 +42,7 @@ export function gateway(client: MetaClient, ledger: Ledger) {
         await ledger.record({ step_id, attempt_purpose: purpose, attempt, model: req.model, usage: r.usage, cost_usd: cost, ms: r.ms, request_id: r.request_id });
         return { ...r, cost };
       } catch (e) {
+        if (e instanceof CreditExhausted) throw e;
         const err = e as MetaError;
         if (ctl.signal.aborted) {
           await ledger.record({ step_id, attempt_purpose: purpose, attempt, model: req.model, usage: null, cost_usd: null, ms: GATEWAY.timeout_ms, request_id: null });

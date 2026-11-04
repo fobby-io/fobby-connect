@@ -1,129 +1,56 @@
-// Local review server for the hackathon demo: upload, read, review, approve, learn.
-// shortcut: Node http with files under data/; the Workers api and Postgres replace it in M2-M5.
+// Local review server: the review API from app.ts on Node, with files under data/ and the disk cache in front of Meta.
 // Run: npx tsx src/server/local.ts   (http://localhost:8787)
-import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { join } from "node:path";
+import { createServer } from "node:http";
+import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
 import { renderPageAsImage } from "unpdf";
 import { cachedClient } from "../../eval/cache.ts";
-import { gateway } from "../gateway/gateway.ts";
-import { memoryLedger } from "../gateway/ledger.ts";
 import { metaClient } from "../gateway/meta-client.ts";
-import { preparePages, readMissingColumn, replayReader, runDocument, type PageInput, type RunResult } from "../pipeline/run.ts";
-import { HEADER_KEYS, LINE_FIELDS } from "../shared/fields.ts";
-import { fileStore } from "../profiles/file-store.ts";
-import { diff, learn, seed, type Page } from "../profiles/loop.ts";
-import { sparkRewrite } from "../profiles/rewrite.ts";
-import { schemas } from "../shared/model-output.ts";
-import { normalize } from "../normalize/normalize.ts";
-import { checkDocument } from "../rules/checks.ts";
+import { createApp, type Files } from "./app.ts";
 
 const DATA = process.env.DATA_DIR ?? "data";
-const RUNS = join(DATA, "runs");
-mkdirSync(RUNS, { recursive: true });
+const SAMPLES = "eval/samples";
 process.loadEnvFile(".dev.vars");
 const { client, spent } = cachedClient(metaClient(process.env.META_API_KEY!), Number(process.env.MAX_SPEND ?? 5));
-const g = gateway(client, memoryLedger());
-const store = seed(fileStore(join(DATA, "profiles.json")));
 const WEB = new URL("../../web/", import.meta.url);
 
-type Saved = { id: string; name: string; run: RunResult; pages: PageInput[]; approved?: { sender: string; learn: unknown; corrected: number } };
-const load = (id: string): Saved => {
-  const d: Saved = JSON.parse(readFileSync(join(RUNS, `${id}.json`), "utf8"));
-  // Runs saved before a header key was added lack it; the schema needs every key present.
-  for (const p of d.run.pages) for (const k of HEADER_KEYS) p.output.header[k] ??= null;
-  return d;
+// samples/ are the committed synthetic samples; everything else is this machine's data.
+const fileOf = (key: string) => key.startsWith("samples/") ? join(SAMPLES, key.slice(8)) : join(DATA, key);
+const files: Files = {
+  get: async (key) => existsSync(fileOf(key)) ? new Uint8Array(readFileSync(fileOf(key))) : null,
+  put: async (key, bytes) => { mkdirSync(dirname(fileOf(key)), { recursive: true }); writeFileSync(fileOf(key), bytes); },
 };
-const save = (d: Saved) => writeFileSync(join(RUNS, `${d.id}.json`), JSON.stringify(d));
-
-async function body(req: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const c of req) {
-    size += c.length;
-    if (size > 25 * 1024 * 1024) throw Object.assign(new Error("file over 25 MB"), { status: 413 });
-    chunks.push(c);
-  }
-  return Buffer.concat(chunks);
-}
-const json = (res: ServerResponse, status: number, x: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(x)); };
-
-async function handle(req: IncomingMessage, res: ServerResponse) {
-  const url = new URL(req.url ?? "/", "http://x");
-  const m = url.pathname.match(/^\/api\/documents\/([\w-]+)(?:\/(pages)\/(\d+)\.png|\/(approve))?$/);
-
-  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    return res.end(readFileSync(new URL("index.html", WEB)));
-  }
-  if (req.method === "POST" && url.pathname === "/api/documents") {
-    const bytes = new Uint8Array(await body(req));
-    const id = randomUUID().slice(0, 8);
-    writeFileSync(join(RUNS, `${id}.pdf`), bytes);
-    const pages = await preparePages(bytes);
-    const run = await runDocument(g, store, pages, { doc_id: id, sender: url.searchParams.get("sender") || null });
-    const d: Saved = { id, name: url.searchParams.get("name") ?? id, run, pages };
-    save(d);
-    return json(res, 200, view(d));
-  }
-  if (req.method === "GET" && url.pathname === "/api/profiles") {
-    return json(res, 200, store.senders().map((s) => ({ sender: s, versions: ["PL", "SO"].flatMap((c) => store.versions("sender", `${s}/${c}`)) })));
-  }
-  if (m && req.method === "GET" && m[2] === "pages") {
-    const png = join(RUNS, `${m[1]}-p${m[3]}.png`);
-    if (!existsSync(png)) {
-      const img = await renderPageAsImage(new Uint8Array(readFileSync(join(RUNS, `${m[1]}.pdf`))), Number(m[3]), { canvasImport: () => import("@napi-rs/canvas"), scale: 1.5 });
-      writeFileSync(png, Buffer.from(img));
-    }
-    res.writeHead(200, { "content-type": "image/png" });
-    return res.end(readFileSync(png));
-  }
-  if (m && req.method === "GET" && !m[2] && !m[4]) return json(res, 200, view(load(m[1]!)));
-  // The review screen sends the edited raw values and shows what they normalize to and which checks still fail.
-  if (req.method === "POST" && url.pathname === "/api/normalize") {
-    const answer = (JSON.parse((await body(req)).toString("utf8")).answer as unknown[]).map((p) => schemas.compact.parse(p));
-    return json(res, 200, { normalized: normalize(answer), findings: checkDocument(answer) });
-  }
-  // A printed column the read left out: re-read that one page with the column named.
-  const mc = url.pathname.match(/^\/api\/documents\/([\w-]+)\/pages\/(\d+)\/columns$/);
-  if (mc && req.method === "POST") {
-    const d = load(mc[1]!), page = d.pages[Number(mc[2]) - 1];
-    const b = JSON.parse((await body(req)).toString("utf8")) as { label?: string; field?: string; page?: unknown };
-    const label = (b.label ?? "").trim().slice(0, 60);
-    if (!page || !label || !(LINE_FIELDS as readonly string[]).includes(b.field ?? "")) {
-      return json(res, 400, { error: { code: "bad_column", message: "Name the printed column and pick what it is." } });
-    }
-    // The page as the clerk has it now (with their edits), validated like any answer.
-    const current = schemas.compact.parse(b.page ?? d.run.pages[Number(mc[2]) - 1]!.output);
-    const r = await readMissingColumn(g, store, page, { doc_id: d.id, prompt: d.run.prompt, current, label, field: b.field! });
-    if (!r.output) return json(res, 422, { error: { code: "still_missing", message: `重讀後還是沒有「${label}」這一欄，或對不上原本的列。請確認欄名和文件上印的一樣。` } });
-    return json(res, 200, { output: r.output, cost_usd: r.cost_usd });
-  }
-  if (m && req.method === "POST" && m[4]) {
-    const d = load(m[1]!);
-    // A repeated submit (double click, retry after a slow answer) gets the saved result, not an error.
-    if (d.approved) return json(res, 200, { corrected: d.approved.corrected, learn: d.approved.learn, spent: spent() });
-    const b = JSON.parse((await body(req)).toString("utf8")) as { sender: string; answer: Page[] };
-    const sender = b.sender.trim().toUpperCase();
-    if (!sender) return json(res, 400, { error: { code: "sender_required", message: "Name the sender before approving." } });
-    // The answer comes from the browser: validate it against the same schema the model output passed.
-    const answer = b.answer.map((p) => schemas.compact.parse(p));
-    const model = d.run.pages.map((p) => p.output);
-    const corrected = diff(model, answer).length;
-    const result = await learn(store, {
-      doc_id: d.id, sender, cls: d.run.cls ?? "PL", pages: d.pages.map((p) => p.content), answer, model,
-    }, replayReader(g, store), sparkRewrite(client));
-    d.approved = { sender, learn: result, corrected };
-    save(d);
-    return json(res, 200, { corrected, learn: result, spent: spent() });
-  }
-  json(res, 404, { error: { code: "not_found", message: url.pathname } });
-}
-
-// The browser gets the run without the page bytes.
-const view = (d: Saved) => ({ id: d.id, name: d.name, run: d.run, normalized: normalize(d.run.pages.map((p) => p.output)), approved: d.approved ?? null, spent: spent() });
+const app = createApp({ files, client, spent });
 
 const port = Number(process.env.PORT ?? 8787);
-createServer((req, res) => handle(req, res).catch((e) => json(res, (e as { status?: number }).status ?? 500, { error: { code: "failed", message: (e as Error).message } })))
-  .listen(port, () => console.log(`review server on http://localhost:${port}`));
+createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      return res.end(readFileSync(new URL("index.html", WEB)));
+    }
+    // shortcut: page images rendered on the server need a native canvas, so only the local host has them; react-ui UI-1.3 removes this.
+    const png = url.pathname.match(/^\/api\/documents\/([\w-]+)\/pages\/(\d+)\.png$/);
+    if (req.method === "GET" && png) {
+      const out = join(DATA, "runs", `${png[1]}-p${png[2]}.png`);
+      if (!existsSync(out)) {
+        const img = await renderPageAsImage(new Uint8Array(readFileSync(join(DATA, "runs", `${png[1]}.pdf`))), Number(png[2]), { canvasImport: () => import("@napi-rs/canvas"), scale: 1.5 });
+        writeFileSync(out, Buffer.from(img));
+      }
+      res.writeHead(200, { "content-type": "image/png" });
+      return res.end(readFileSync(out));
+    }
+    const hasBody = req.method !== "GET" && req.method !== "HEAD";
+    const r = await app.fetch(new Request(url, {
+      method: req.method, headers: req.headers as Record<string, string>,
+      ...(hasBody ? { body: Readable.toWeb(req) as ReadableStream, duplex: "half" } : {}),
+    } as RequestInit));
+    res.writeHead(r.status, Object.fromEntries(r.headers));
+    res.end(Buffer.from(await r.arrayBuffer()));
+  } catch (e) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: { code: "failed", message: (e as Error).message } }));
+  }
+}).listen(port, () => console.log(`review server on http://localhost:${port}`));
