@@ -12,7 +12,6 @@ import { createApp, type Files } from "./app.ts";
 import { pgliteDb, urlDb } from "./pg-node.ts";
 
 const DATA = process.env.DATA_DIR ?? "data";
-const SAMPLES = "eval/samples";
 process.loadEnvFile(".dev.vars");
 const { client, spent } = cachedClient(metaClient(process.env.META_API_KEY!), Number(process.env.MAX_SPEND ?? 5));
 const DIST = new URL("../../web/dist/", import.meta.url);
@@ -22,8 +21,7 @@ const TYPES: Record<string, string> = {
   ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".wasm": "application/wasm",
 };
 
-// samples/ are the committed synthetic samples; everything else is this machine's data.
-const fileOf = (key: string) => key.startsWith("samples/") ? join(SAMPLES, key.slice(8)) : join(DATA, key);
+const fileOf = (key: string) => join(DATA, key);
 const files: Files = {
   get: async (key) => existsSync(fileOf(key)) ? new Uint8Array(readFileSync(fileOf(key))) : null,
   put: async (key, bytes) => { mkdirSync(dirname(fileOf(key)), { recursive: true }); writeFileSync(fileOf(key), bytes); },

@@ -18,7 +18,7 @@ import { verifyDocument, type Decide, type Verification } from "../verify/jev.ts
 import { exportCsv, exportJson, type Exportable } from "./export.ts";
 import { deliver, Graph, newSecret, recipients, targets, type Delivery, type Flow } from "./webhook.ts";
 
-/** Keys: runs/<id>.pdf|json, examples/<doc_id>.json, prompts/<hash>.json, space.json, <space>/holds/<sender>.json, flow.json, samples/index.json, samples/<id>.pdf|json. The rest lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
+/** Keys: runs/<id>.pdf|json, examples/<doc_id>.json, prompts/<hash>.json, space.json, <space>/holds/<sender>.json, flow.json. The rest lives in the database (db.ts); older JSON state is moved by migrate-storage.ts. */
 /** list gives every key that starts with prefix, in any order; delete of a missing key is not an error. */
 export type Files = { get(key: string): Promise<Uint8Array | null>; put(key: string, bytes: Uint8Array): Promise<void>; list(prefix: string): Promise<string[]>; delete(key: string): Promise<void> };
 /** One email the host sends for an email output of the flow. Throws when the host refuses or fails to send it. */
@@ -41,7 +41,6 @@ export type Saved = {
   auto?: { ok: boolean; reasons: AutoReason[] }; deliveries?: Delivery[]; source?: { via: "email"; from: string; subject: string };
   approved?: { sender: string; learn: unknown; corrected: number; answer?: Page[]; approved_at?: string };
 };
-export type Sample = { id: string; name: string; sender: string };
 export type ListedDoc = {
   id: string; name: string; sender: string | null; cls: string | null; status: "review" | "approved" | "auto";
   created_at: string; flagged: number | null; reopened: boolean;
@@ -348,17 +347,6 @@ export function createApp(deps: Deps) {
         approved: ["PL", "SO"].map((cls) => ({ cls, count: s.approved({ sender: x, cls }).length })).filter((a) => a.count),
         docs: docs.filter((d) => d.sender === x),
       }))));
-    }
-    if (req.method === "GET" && path === "/api/samples") return json(200, (await getJson<Sample[]>("samples/index.json")) ?? []);
-    // A sample is opened as a copy, so the original is never approved or edited; no model call.
-    if (req.method === "POST" && (m = path.match(/^\/api\/samples\/([\w-]+)\/open$/))) {
-      const src = await getJson<Saved>(`samples/${m[1]}.json`);
-      const pdf = await files.get(`samples/${m[1]}.pdf`);
-      if (!src || !pdf) throw fail(404, "not_found", `sample ${m[1]}`);
-      const d: Saved = { ...src, id: newId(), approved: undefined, verify: undefined, auto: undefined, deliveries: undefined };
-      await files.put(`runs/${d.id}.pdf`, pdf);
-      await intake(d);
-      return json(200, view(d));
     }
     if (req.method === "GET" && (m = path.match(/^\/api\/documents\/([\w-]+)\/file$/))) {
       const pdf = await files.get(`runs/${m[1]}.pdf`);

@@ -102,21 +102,6 @@ describe("createApp", () => {
     expect("approved_at" in (await (await call(app, `/api/documents/${doc.id}`)).json()).approved).toBe(false);
   });
 
-  it("opens a sample as a new copy without calling the model", async () => {
-    const c = reads();
-    const { app, store } = setup(c);
-    const enc = (x: unknown) => new TextEncoder().encode(JSON.stringify(x));
-    store.set("samples/index.json", enc([{ id: "s1", name: "Sample", sender: "DEMO" }]));
-    store.set("samples/s1.json", enc({ id: "s1", name: "Sample", pages: [], run: { cls: "PL", sender: "DEMO", issuer: null, prompt: null, pages: [{ page_no: 1, route: "vision", output: PAGE, reread: false }], findings: [], cost_usd: 0 } }));
-    store.set("samples/s1.pdf", await pdf());
-
-    expect(await (await call(app, "/api/samples")).json()).toEqual([{ id: "s1", name: "Sample", sender: "DEMO" }]);
-    const r = await (await call(app, "/api/samples/s1/open", { method: "POST" })).json();
-    expect(r.id).not.toBe("s1");
-    expect(store.has(`runs/${r.id}.pdf`)).toBe(true);
-    expect(c).not.toHaveBeenCalled();
-  });
-
   it("answers 402 credit_exhausted when Meta says the credit is gone", async () => {
     const { app } = setup(async () => { throw new MetaError(402, false, "insufficient credit"); });
     const r = await call(app, "/api/documents", { method: "POST", body: await pdf() });
@@ -136,7 +121,7 @@ describe("createApp", () => {
     expect(store.size).toBe(0);
   });
 
-  it("stops model-backed actions at the daily cap as credit_exhausted, counting corrected approvals but not samples or clean ones", async () => {
+  it("stops model-backed actions at the daily cap as credit_exhausted, counting corrected approvals but not clean ones", async () => {
     const c = reads();
     const { app, store } = setup(c, undefined, 2);
     const doc = await (await call(app, "/api/documents", { method: "POST", body: await pdf() })).json();

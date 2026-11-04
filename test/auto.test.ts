@@ -6,7 +6,7 @@ import { HEADER_KEYS, TOTALS_KEYS } from "../src/shared/fields.ts";
 import { verifyDocument, type Decide } from "../src/verify/jev.ts";
 import { checkUrl, deliver, sign, targets, type Graph } from "../src/server/webhook.ts";
 import { png } from "../src/verify/page-image.ts";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import { lazyDb, pgliteDb } from "../src/server/pg-node.ts";
 
 vi.mock("node:fs", () => new Proxy({}, { get: () => { throw new Error("node:fs used by the app"); } }));
@@ -29,10 +29,16 @@ const ITEMS = [
   { id: 2, box: [50, 340, 70, 350] as [number, number, number, number], text: "50" },
 ];
 const pageInput = (route: "text" | "vision" = "text") => ({ page_no: 1, route, content: [{ type: "text" as const, text: "page" }], items: route === "text" ? ITEMS : [] });
-const sample = (output = page()) => ({
-  id: "s1", name: "sample", pages: [pageInput()],
-  run: { cls: "PL", sender: null, issuer: "ACME CORP\nTAIPEI", prompt: null, pages: [{ page_no: 1, route: "text", output, reread: false }], findings: [], cost_usd: 0 },
-});
+// The uploaded document: a digital page with the three printed values where ITEMS has them, and a footer of words far
+// below so the page has enough text to be read as text.
+const textPdf = (async () => {
+  const d = await PDFDocument.create();
+  const p = d.addPage([595, 842]);
+  const font = await d.embedFont(StandardFonts.Helvetica);
+  for (const it of ITEMS) p.drawText(it.text, { x: (it.box[0] / 1000) * 595, y: 842 - (it.box[3] / 1000) * 842, size: 8, font });
+  for (let i = 0; i < 24; i++) p.drawText(`f${i}`, { x: 30 + (i % 12) * 40, y: 40 + Math.floor(i / 12) * 14, size: 8, font });
+  return (await d.save()).slice();
+})();
 
 // Jev stand-in: every question gets `p`, and every request is kept.
 const jev = (p = 0.99) => {
@@ -40,22 +46,23 @@ const jev = (p = 0.99) => {
   const decide: Decide = async (req) => { asked.push(req); return { answers: Object.fromEntries(Object.keys(req.questions).map((k) => [k, { noul: p }])), cost: 0.00001 }; };
   return { decide, asked };
 };
-const noMeta: MetaClient = async () => { throw new Error("no model call expected"); };
 
 const shared = pgliteDb();
 function setup(decide?: Decide) {
   const store = new Map<string, Uint8Array>();
-  const enc = new TextEncoder();
   // One PGlite per file; each setup is its own space in it, as each team is.
   const own = new TextEncoder().encode(JSON.stringify({ id: crypto.randomUUID() }));
   const files = { get: async (k: string) => (k === "space.json" ? own : store.get(k) ?? null), put: async (k: string, b: Uint8Array) => void store.set(k, b), list: async (p: string) => [...store.keys()].filter((k) => k.startsWith(p)), delete: async (k: string) => void store.delete(k) };
-  const app = createApp({ files, db: lazyDb(shared), client: noMeta, decide });
-  const put = (s: unknown) => { store.set("samples/s1.json", enc.encode(JSON.stringify(s))); store.set("samples/s1.pdf", new Uint8Array([37, 80, 68, 70])); };
-  put(sample());
+  // The read returns `output` for every page; put changes what the next uploads read.
+  let output = page();
+  const client: MetaClient = async () => ({ content: JSON.stringify(output), finish_reason: "stop", usage: { prompt_tokens: 10, cached_tokens: 0, completion_tokens: 10, reasoning_tokens: 0 }, request_id: null, ms: 1 });
+  const app = createApp({ files, db: lazyDb(shared), client, decide });
+  const put = (p: Page) => { output = p; };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const call = async (path: string, init?: RequestInit): Promise<any> => (await app.fetch(new Request(`http://x${path}`, init))).json();
   const post = (path: string, body?: unknown) => call(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
-  return { app, store, put, call, open: () => post("/api/samples/s1/open"), approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
+  const open = async () => call("/api/documents", { method: "POST", body: await textPdf });
+  return { app, store, put, call, open, approve: (id: string, answer = [page()]) => post(`/api/documents/${id}/approve`, { sender: "acme", answer }), post };
 }
 
 describe("second system and automatic approval", () => {
@@ -111,12 +118,12 @@ describe("second system and automatic approval", () => {
 
     const moved = setup(jev().decide);
     await moved.approve((await moved.open()).id);
-    moved.put(sample(page("CARTONS")));
+    moved.put(page("CARTONS"));
     expect((await moved.open()).auto.reasons).toContain("layout_changed");
 
     const failing = setup(jev().decide);
     await failing.approve((await failing.open()).id);
-    failing.put(sample(page("CTNS", ["49"])));
+    failing.put(page("CTNS", ["49"]));
     expect((await failing.open()).auto.reasons).toContain("findings");
 
     const blind = setup();
