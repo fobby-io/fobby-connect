@@ -71,7 +71,9 @@ export function App() {
               i + 1 === step && "on font-semibold text-foreground", i + 1 < step && "done")}>{s}</li>
           ))}
         </ol>
-        {step !== 1 && <Button variant="outline" className="ml-auto" onClick={() => { opened.current = null; toUpload(); }}>讀下一份文件</Button>}
+        {/* AGPL §13: people using the hosted site get a way to the source. */}
+        <a href="https://github.com/fobby-io/fobby-connect" target="_blank" rel="noreferrer" className="ml-auto text-sm text-muted-foreground underline-offset-4 hover:underline">原始碼</a>
+        {step !== 1 && <Button variant="outline" onClick={() => { opened.current = null; toUpload(); }}>讀下一份文件</Button>}
       </header>
       <main className="mx-auto max-w-[1600px] px-6 pt-5 pb-32">{body}</main>
     </>
