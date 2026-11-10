@@ -8,13 +8,15 @@ Freight forwarders retype every Shipping Order (SO) and Packing List (PL) by han
 
 Fobby Connect reads each page with Meta's Muse Spark into one fixed schema. Code checks the numbers and a second system checks every value. When a clerk corrects a value, Muse Wonder rewrites that sender's prompt, so the sender's next document needs less review. A document from a known sender that passes every check is approved and sent on with no person involved.
 
-## Try it
+## Demo
 
-Open https://connect.fobby.io: the list already holds these three synthetic samples (invented companies), read and checked, so you can open them right away. To watch a document being read, upload them yourself in this order. Each one takes about a minute to read; the list updates by itself.
+The hosted version is offline for now. The [demo video](https://youtu.be/05ZM_NucMVU) reads these three synthetic samples (invented companies) in this order:
 
-1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender. It goes to review: check it against the PDF and approve.
+1. [Packing list 1](eval/samples/pl-1.pdf), 2 pages, from a new sender. It goes to review: a person checks it against the PDF and approves.
 2. [Packing list 2](eval/samples/pl-2.pdf), same sender and layout. Every value is checked, and it is approved without review.
 3. [Shipping order](eval/samples/so-1.pdf), in Chinese, from another sender.
+
+To read them yourself, see [Run it yourself](#run-it-yourself).
 
 ## How the reading pipeline is optimized
 
@@ -147,4 +149,4 @@ Sample and test documents are synthetic: invented companies, numbers and product
 
 ## Licence
 
-AGPL-3.0. The hosted version at connect.fobby.io runs this code.
+AGPL-3.0.
